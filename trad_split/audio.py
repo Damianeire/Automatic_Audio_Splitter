@@ -19,7 +19,8 @@ class FFmpegMissing(RuntimeError):
 
 
 def _tool(name: str) -> str:
-    path = shutil.which(name)
+    # Apps like Obsidian run commands with a bare PATH, so also look where Homebrew installs.
+    path = shutil.which(name) or shutil.which(name, path="/opt/homebrew/bin:/usr/local/bin")
     if not path:
         raise FFmpegMissing(f"{name} not found. Install it with: brew install ffmpeg")
     return path
@@ -96,14 +97,25 @@ def _ffmetadata(chapters: list[tuple[float, float, str]]) -> str:
     return "\n".join(lines) + "\n"
 
 
-def cut(src: Path, dst: Path, start: float, end: float, *, reencode: bool = False,
-        tags: dict[str, str] | None = None,
-        chapters: list[tuple[float, float, str]] | None = None) -> None:
-    """Write src[start:end] to dst. Stream copy by default (fast, no quality loss).
+def codec_for(src: Path, dst: Path) -> str:
+    """Stream copy when the container matches, otherwise encode to dst's format."""
+    same = {".m4a", ".mp4", ".caf"}
+    s, d = src.suffix.lower(), dst.suffix.lower()
+    if s == d or (s in same and d in same):
+        return "copy"
+    return {".mp3": "mp3", ".m4a": "aac"}.get(d, "copy")
 
-    chapters are (start, end, title) in seconds from the start of dst; they are
-    embedded in formats that support them (m4a, mp3) and ignored otherwise.
+
+def cut(src: Path, dst: Path, start: float, end: float, *, reencode: bool = False,
+        codec: str | None = None, tags: dict[str, str] | None = None,
+        chapters: list[tuple[float, float, str]] | None = None) -> None:
+    """Write src[start:end] to dst.
+
+    codec is "copy" (fast, no quality loss), "aac" or "mp3"; reencode=True is
+    the older way of asking for "aac". chapters are (start, end, title) in
+    seconds from the start of dst, embedded where the format supports them.
     """
+    codec = codec or ("aac" if reencode else "copy")
     cmd = [_tool("ffmpeg"), "-nostdin", "-v", "error", "-y",
            "-ss", f"{start:.3f}", "-t", f"{max(end - start, 0.01):.3f}", "-i", str(src)]
     meta_file = None
@@ -117,8 +129,10 @@ def cut(src: Path, dst: Path, start: float, end: float, *, reencode: bool = Fals
     else:
         cmd += ["-map_metadata", "-1"]
     cmd += ["-vn"]
-    if reencode:
+    if codec == "aac":
         cmd += ["-c:a", "aac", "-b:a", "192k"]
+    elif codec == "mp3":
+        cmd += ["-c:a", "libmp3lame", "-q:a", "2", "-id3v2_version", "3"]
     else:
         cmd += ["-c", "copy"]
     for key, value in (tags or {}).items():
@@ -127,7 +141,11 @@ def cut(src: Path, dst: Path, start: float, end: float, *, reencode: bool = Fals
         cmd += ["-movflags", "+faststart"]
     cmd.append(str(dst))
     try:
-        subprocess.run(cmd, check=True, capture_output=True)
+        result = subprocess.run(cmd, capture_output=True, text=True)
+        if result.returncode:
+            if "libmp3lame" in result.stderr:
+                raise FFmpegMissing("this ffmpeg cannot write mp3. Install one that can: brew install ffmpeg")
+            raise subprocess.CalledProcessError(result.returncode, cmd, result.stdout, result.stderr)
     finally:
         if meta_file:
             Path(meta_file.name).unlink(missing_ok=True)

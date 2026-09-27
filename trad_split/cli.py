@@ -29,6 +29,8 @@ DEFAULTS = {
     "device": "auto",
     "model": None,
     "pad": None,  # shortcut for pad_start and pad_end together
+    "tunes_folder": None,  # where --export-tunes puts files; default: Obsidian's attachment folder
+    "tune_format": "mp3",
     "tunes": True,  # mark tune changes inside sets
     "min_tune": 60.0,
     "tune_sensitivity": 1.0,
@@ -71,6 +73,13 @@ def build_parser() -> argparse.ArgumentParser:
     out.add_argument("--plot", action=B, help="save a PNG of the scores and segments")
     out.add_argument("--reencode", action=B, help="re-encode to AAC 192k instead of stream copy")
     out.add_argument("--force", action=B, help="overwrite an existing Reaper project or note")
+
+    exp = p.add_argument_group("export named tunes from a session note")
+    exp.add_argument("--export-tunes", type=Path, metavar="NOTE",
+                     help="cut each named tune in NOTE's loops blocks to 'yyyymmdd Name.mp3'")
+    exp.add_argument("--tunes-folder", help="folder for tune files (default: Obsidian's attachment folder)")
+    exp.add_argument("--tune-format", choices=["mp3", "m4a"], help="tune file format (default mp3)")
+    exp.add_argument("--all", action="store_true", help="also export sections still named 'Tune N'")
 
     src = p.add_argument_group("use edited boundaries instead of detecting")
     src.add_argument("--from-reaper", type=Path, metavar="RPP",
@@ -279,6 +288,15 @@ def main(argv: list[str] | None = None) -> int:
     args = build_parser().parse_args(argv)
     opts = resolve_options(args)
     try:
+        if args.export_tunes:
+            from .export import export_tunes
+
+            report = export_tunes(args.export_tunes, vault=opts["vault"], folder=opts["tunes_folder"],
+                                  fmt=opts["tune_format"], include_unnamed=args.all, force=opts["force"])
+            print(report.summary() if report.exported or report.existing or report.unnamed
+                  or report.missing_files else "No loops blocks with tunes found in this note.")
+            return 0
+
         if args.from_reaper:
             rpp = args.from_reaper.expanduser()
             source, regions = reaper.read_rpp(rpp)

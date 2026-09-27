@@ -47,6 +47,36 @@ Correcting in Reaper: move, delete or add markers, and rename them with the tune
 
 Settings: `--min-tune` (default 60 s) and `--tune-sensitivity` (default 1; higher finds more). Use `--no-tunes` to turn detection off. With `--plot`, detected changes show as dashed lines.
 
+### Exporting named tunes
+
+Once the tune names and boundaries in a session note's `loops` blocks are right, one command cuts each named tune into its own file. The set files are left as they are. Each tune file:
+
+- is named `yyyymmdd Tune Name.mp3`, for example `20251122 The Silver Spear.mp3`. The date comes from the note's `date:`;
+- goes into your sound files folder. That is the `tunes_folder` setting if you set one; otherwise Obsidian's attachment folder (Settings > Files and links); otherwise `Sound Files`;
+- gets a link in the vault note with the same name as the tune (e.g. `The Silver Spear.md`), added under a `## Recordings` heading as `- ![[20251122 The Silver Spear.mp3]] from [[20251122 The Clock Tavern 22]]`. The heading is created if the note doesn't have one.
+
+Sections still called `Tune 2` and so on are skipped until you name them, unless you use `--all`. A trailing `?` is dropped from names. If the same tune comes up twice in one session, the second file gets ` (2)`. Files that already exist are left alone, so running it again is safe; use `--force` to replace them. Tunes with no note of their own are listed in the summary, and no note is created for them.
+
+Set files that are already mp3 are copied without re-encoding. m4a set files are converted to mp3 (LAME VBR, about 190 kbps, a second or two per tune). Set `tune_format = "m4a"` to keep them as m4a.
+
+From Terminal:
+
+```sh
+trad-split --export-tunes "path/to/20251122 The Clock Tavern 22.md"
+```
+
+From Obsidian, with Templater:
+
+1. Copy `obsidian/Export tunes.md` from this repo into your Templater templates folder.
+2. Go to Settings > Templater > User system command functions, and turn it on. Set Timeout to 120 seconds, because the default of a few seconds is too short for mp3 conversion.
+3. Add a function named `export_tunes` with this command:
+   ```sh
+   "$HOME/Code/trad-split/.venv/bin/trad-split" --export-tunes "$note"
+   ```
+4. Optionally, add a hotkey for it in Settings > Templater > Template hotkeys, by adding `Export tunes`.
+
+To use it, open a session note and run Templater: Insert template > Export tunes, or press your hotkey. Nothing is inserted into the note. A notice shows the result, for example `Exported 5 tunes; linked 3; no tune note for: The Mason's Apron.`
+
 ## Setup (Mac)
 
 ```sh

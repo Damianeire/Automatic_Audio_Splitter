@@ -21,6 +21,10 @@ pad_start = 1.5         # seconds kept before each set
 pad_end = 3.5           # seconds kept after each set, keeps the applause
 switch_penalty = 12.0   # higher = fewer, longer segments
 bias = 0.0              # positive favours music, negative favours chat
+# Exporting named tunes from a session note (--export-tunes)
+# tunes_folder = "Sound Files"   # vault-relative or absolute; default: Obsidian's attachment folder
+tune_format = "mp3"              # mp3 or m4a
+
 # Tune changes within sets
 tunes = true            # mark where tunes change (chapters, note sections, Reaper markers)
 min_tune = 60.0         # seconds; shortest tune

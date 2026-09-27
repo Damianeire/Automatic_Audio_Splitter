@@ -25,6 +25,14 @@ def loop_time(seconds: float) -> str:
     return f"{m}:{s:02d}" + (f".{t}" if t else "")
 
 
+def parse_loop_time(text: str) -> float:
+    """Inverse of loop_time: 'm:ss', 'm:ss.s' (or plain seconds) to seconds."""
+    total = 0.0
+    for part in text.strip().split(":"):
+        total = total * 60 + float(part)
+    return total
+
+
 def loops_block(file_link: str, segment: Segment) -> list[str]:
     """Tune sections for the audio-loop-player plugin, times relative to the set file."""
     lines = ["```loops", f"file: {file_link}"]
