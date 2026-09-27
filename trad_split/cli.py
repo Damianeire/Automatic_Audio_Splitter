@@ -36,8 +36,11 @@ DEFAULTS = {
 def load_config(path: Path) -> dict:
     if not path.exists():
         return {}
-    with open(path, "rb") as f:
-        cfg = tomllib.load(f)
+    try:
+        with open(path, "rb") as f:
+            cfg = tomllib.load(f)
+    except tomllib.TOMLDecodeError as e:
+        raise SystemExit(f"error: {path} is not valid TOML: {e}")
     cfg = {k.replace("-", "_"): v for k, v in cfg.items()}
     unknown = set(cfg) - set(DEFAULTS)
     if unknown:
@@ -123,9 +126,19 @@ def detect(memo: Path, session_dir: Path, length: float, opts: dict,
            classifier_cache: dict) -> tuple[list[Segment], dict]:
     from . import classify
 
-    cache = session_dir / f"{memo.stem}.scores.npz"
+    cache = classify.cache_path(memo)
     size = memo.stat().st_size
-    scores = None if opts["rescan"] else classify.load_scores(cache, size)
+    scores = None
+    if not opts["rescan"]:
+        # Older versions kept scores in the session folder; reuse those too.
+        legacy = [session_dir / f"{memo.stem}.scores.npz",
+                  memo.parent / safe_filename(memo.stem) / f"{memo.stem}.scores.npz"]
+        for candidate in [cache, *legacy]:
+            scores = classify.load_scores(candidate, size)
+            if scores is not None:
+                if candidate != cache:
+                    classify.save_scores(cache, scores, size)
+                break
     if scores is None:
         if "clf" not in classifier_cache:
             checkpoint = opts["model"] or classify.CHECKPOINT

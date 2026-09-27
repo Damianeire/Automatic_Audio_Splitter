@@ -111,3 +111,48 @@ def test_config_file(tmp_path):
     opts = cli.resolve_options(cli.build_parser().parse_args(["x", "--config", str(cfg), "--min-set", "30"]))
     assert opts["sets_only"] is True and opts["min_set"] == 30
     assert str(opts["output"]).endswith("Trad") and "~" not in str(opts["output"])
+
+
+def test_cache_path_tracks_memo_changes(tmp_path):
+    import os
+
+    from trad_split.classify import cache_path
+
+    memo = tmp_path / "m.m4a"
+    memo.write_bytes(b"abc")
+    first = cache_path(memo, tmp_path)
+    assert first == cache_path(memo, tmp_path)
+    os.utime(memo, ns=(0, 10**18))
+    assert cache_path(memo, tmp_path) != first
+
+
+def test_output_elsewhere_reuses_scores_next_to_memo(memo, tmp_path, monkeypatch):
+    """Moving output into the vault must not force the model to run again."""
+    import numpy as np
+
+    from trad_split import classify
+
+    monkeypatch.setattr(classify, "CACHE_DIR", tmp_path / "cache")
+    monkeypatch.setattr(classify, "Classifier", None)  # any model use would fail
+    hop = 0.5
+    log_odds = np.r_[np.full(20, -3.0), np.full(160, 3.0), np.full(60, -3.0)]  # 10 s chat, 80 s set, 30 s chat
+    legacy = tmp_path / "Session" / "Session.scores.npz"
+    legacy.parent.mkdir()
+    classify.save_scores(legacy, {"music": log_odds, "chat": log_odds, "log_odds": log_odds,
+                                  "hop": np.float32(hop)}, memo.stat().st_size)
+
+    vault = tmp_path / "Vault"
+    assert cli.main([str(memo), "-o", str(vault / "Sessions"), "--vault", str(vault), "--obsidian",
+                     "--sets-only", "--no-reaper", "--config", str(tmp_path / "none.toml")]) == 0
+    session = vault / "Sessions" / "Session"
+    assert sorted(p.name for p in session.iterdir() if not p.name.startswith(".")) == \
+        ["02 Set 1.m4a", "Session.md"]
+    assert "![[Sessions/Session/02 Set 1.m4a]]" in (session / "Session.md").read_text()
+    assert list((tmp_path / "cache").glob("Session-*.npz"))  # copied into the new cache
+
+
+def test_bad_config_gives_clear_error(tmp_path):
+    cfg = tmp_path / "c.toml"
+    cfg.write_text("output = '/it's broken'\n")
+    with pytest.raises(SystemExit, match="not valid TOML"):
+        cli.resolve_options(cli.build_parser().parse_args(["x", "--config", str(cfg)]))

@@ -8,6 +8,7 @@ log(music) - log(chat).
 from __future__ import annotations
 
 import csv
+import hashlib
 import sys
 import urllib.request
 from pathlib import Path
@@ -26,6 +27,8 @@ LABELS_CSV = PANNS_DIR / "class_labels_indices.csv"
 CHECKPOINT_URL = "https://zenodo.org/records/3987831/files/Cnn14_DecisionLevelMax_mAP%3D0.385.pth?download=1"
 LABELS_URL = "https://storage.googleapis.com/us_audioset/youtube_corpus/v1/csv/class_labels_indices.csv"
 CHECKPOINT_MIN_BYTES = 300_000_000
+CACHE_DIR = (Path.home() / "Library" / "Caches" / "trad-split" if sys.platform == "darwin"
+             else Path.home() / ".cache" / "trad-split")
 
 # Anything that says "someone is playing". Singing counts: a song is a set.
 MUSIC_CLASSES = [
@@ -152,7 +155,20 @@ def pool_scores(framewise: np.ndarray, music_ix: list[int], chat_ix: list[int],
     return {"music": music, "chat": chat, "log_odds": log_odds, "hop": np.float32(hop)}
 
 
+def cache_path(memo: Path, cache_dir: Path | None = None) -> Path:
+    """Where the scores for this memo are kept, independent of the output folder.
+
+    Keyed on the memo's full path, size and modified time, so a moved, renamed
+    or changed memo is analysed afresh.
+    """
+    st = memo.stat()
+    key = f"{memo.resolve()}|{st.st_size}|{st.st_mtime_ns}"
+    digest = hashlib.sha1(key.encode()).hexdigest()[:12]
+    return (cache_dir or CACHE_DIR) / f"{memo.stem}-{digest}.npz"
+
+
 def save_scores(path: Path, scores: dict[str, np.ndarray], source_size: int) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
     np.savez_compressed(path, source_size=source_size, **scores)
 
 

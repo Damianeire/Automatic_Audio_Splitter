@@ -22,7 +22,7 @@ For each memo it can produce:
 4. Any set under 40 s is folded into the chat around it, which catches tuning up and noodling. Any chat under 4 s is folded into the sets around it.
 5. Each set starts 1.5 s early and runs 3.5 s past the last note, so the first notes and the applause are kept.
 
-The model scores are cached next to the output (`<memo>.scores.npz`). Re-running with different tuning settings therefore takes seconds.
+The model scores are cached in `~/Library/Caches/trad-split/`, keyed on the memo file. Re-running with different tuning settings or a different output folder therefore takes seconds. If you move, rename or edit the memo, it is analysed again.
 
 ## Setup (Mac)
 

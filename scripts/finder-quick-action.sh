@@ -34,7 +34,7 @@ for item in "$@"; do
         *.RPP|*.rpp) args=(--from-reaper "$item"); what="Re-cutting" ;;
         *)           args=("$item");                what="Splitting" ;;
     esac
-    notify "$name" "$what..."
+    notify "$name" "$what... A new memo takes a few minutes."
     run_log="$(mktemp)"
     { echo; echo "=== $(date '+%Y-%m-%d %H:%M:%S')  $what $item"; } >> "$log"
     if "$trad_split" "${args[@]}" > "$run_log" 2>&1; then
