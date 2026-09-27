@@ -106,9 +106,42 @@ Run with `--plot` and look at `<memo>.png`. The top panel shows the music and ch
 
 Scores are cached, so each retry is quick. Add `--rescan` to rerun the model.
 
+## Finder Quick Action
+
+This lets you right-click a memo in Finder and choose Quick Actions > Split Trad Session. Right-clicking a saved `.RPP` runs the same action, and it re-cuts from your Reaper edits. You can select several memos at once.
+
+You get a notification when it starts and another when it finishes. The finished one gives the set count, and the session folder then opens. If something goes wrong, the log opens instead. The log lives at `~/Library/Logs/trad-split.log`. The outputs come from your config file, so set that up first (see below).
+
+One-off setup in Automator:
+
+1. Open Automator and choose New Document > Quick Action.
+2. At the top, set "Workflow receives current" to files or folders, in Finder.
+3. Search the actions list for Run Shell Script and drag it into the workflow.
+4. Set Shell to `/bin/bash` and Pass input to as arguments. Replace the script text with:
+
+   ```sh
+   "$HOME/Code/trad-split/scripts/finder-quick-action.sh" "$@"
+   ```
+
+5. Save it as `Split Trad Session`.
+
+The first time you run it, macOS may ask whether Finder can access your Documents folder. Allow it.
+
+If the action does not appear in the menu, go to System Settings > General > Login Items & Extensions > Finder, and tick Split Trad Session there. On older macOS versions this is under Privacy & Security > Extensions.
+
+To add a keyboard shortcut, go to System Settings > Keyboard > Keyboard Shortcuts > Services > Files and Folders and pick one for Split Trad Session.
+
+While it is running, a small gear shows in the menu bar. Click it to stop.
+
 ## Automation
 
-The command works from Keyboard Maestro (Execute Shell Script), from an Alfred File Action, or from a Folder Action on the folder where you drop memos:
+The same script works from Keyboard Maestro or Alfred, and it takes any number of files:
+
+```sh
+"$HOME/Code/trad-split/scripts/finder-quick-action.sh" "$KMVAR_File"
+```
+
+The command also works on its own, from Keyboard Maestro (Execute Shell Script), from an Alfred File Action, or from a Folder Action on the folder where you drop memos:
 
 ```sh
 /opt/homebrew/bin/trad-split "$KMVAR_File" --obsidian
