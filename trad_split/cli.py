@@ -80,6 +80,8 @@ def build_parser() -> argparse.ArgumentParser:
     exp.add_argument("--tunes-folder", help="folder for tune files (default: Obsidian's attachment folder)")
     exp.add_argument("--tune-format", choices=["mp3", "m4a"], help="tune file format (default mp3)")
     exp.add_argument("--all", action="store_true", help="also export sections still named 'Tune N'")
+    exp.add_argument("--setup-obsidian", action="store_true",
+                     help="install the Export tunes command into the vault's Templater (Obsidian closed)")
 
     src = p.add_argument_group("use edited boundaries instead of detecting")
     src.add_argument("--from-reaper", type=Path, metavar="RPP",
@@ -288,6 +290,20 @@ def main(argv: list[str] | None = None) -> int:
     args = build_parser().parse_args(argv)
     opts = resolve_options(args)
     try:
+        if args.setup_obsidian:
+            from .obsidian_setup import SetupError, setup
+
+            if opts["vault"] is None:
+                raise SystemExit("error: no vault. Pass --vault or set vault in the config file.")
+            try:
+                done = setup(opts["vault"])
+            except SetupError as e:
+                raise SystemExit(f"error: {e}")
+            print("\n".join(f"- {d}" for d in done) if done else "Already set up; nothing changed.")
+            print("\nIn Obsidian, run it from the command palette (Templater: Insert Export tunes), "
+                  "or give it a key in Settings > Hotkeys (search 'Export tunes').")
+            return 0
+
         if args.export_tunes:
             from .export import export_tunes
 

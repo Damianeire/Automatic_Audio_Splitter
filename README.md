@@ -65,17 +65,29 @@ From Terminal:
 trad-split --export-tunes "path/to/20251122 The Clock Tavern 22.md"
 ```
 
-From Obsidian, with Templater:
+From Obsidian, with Templater (install it from Community plugins first). Quit Obsidian, then run:
 
-1. Copy `obsidian/Export tunes.md` from this repo into your Templater templates folder.
-2. Go to Settings > Templater > User system command functions, and turn it on. Set Timeout to 120 seconds, because the default of a few seconds is too short for mp3 conversion.
-3. Add a function named `export_tunes` with this command:
-   ```sh
-   "$HOME/Code/trad-split/.venv/bin/trad-split" --export-tunes "$note"
-   ```
-4. Optionally, add a hotkey for it in Settings > Templater > Template hotkeys, by adding `Export tunes`.
+```sh
+trad-split --setup-obsidian
+```
 
-To use it, open a session note and run Templater: Insert template > Export tunes, or press your hotkey. Nothing is inserted into the note. A notice shows the result, for example `Exported 5 tunes; linked 3; no tune note for: The Mason's Apron.`
+This uses the `vault` from your config file, or pass `--vault`. It does the following:
+- copies the Export tunes template into Templater's templates folder;
+- turns on Templater's user system command functions;
+- adds an `export_tunes` function that runs this install of trad-split;
+- raises the command timeout to 120 s;
+- registers the template so it can have a hotkey.
+
+It backs up Templater's settings first. It refuses to run while Obsidian is open, because Templater would write its old settings back over the changes. Running it again is safe.
+
+To give it a hotkey, reopen Obsidian and go to Settings > Hotkeys, search for "Export tunes" and assign a key.
+
+If you'd rather set it up by hand:
+1. Copy `trad_split/obsidian/Export tunes.md` into your Templater templates folder.
+2. In Settings > Templater, turn on User system command functions and set Timeout to 120 seconds.
+3. Add a function named `export_tunes` with the command `"$HOME/Code/trad-split/.venv/bin/trad-split" --export-tunes "$note"`.
+
+To use it, open a session note and press your hotkey, or run "Templater: Insert Export tunes" from the command palette. Nothing is inserted into the note. A notice shows the result, for example `Exported 5 tunes; linked 3; no tune note for: The Mason's Apron.`
 
 ## Setup (Mac)
 

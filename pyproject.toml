@@ -23,3 +23,6 @@ trad-split = "trad_split.cli:main"
 
 [tool.setuptools]
 packages = ["trad_split"]
+
+[tool.setuptools.package-data]
+trad_split = ["obsidian/*.md"]
