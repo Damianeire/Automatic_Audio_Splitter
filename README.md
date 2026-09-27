@@ -32,7 +32,7 @@ git clone https://github.com/damianeire/automatic_audio_splitter.git ~/Code/trad
 cd ~/Code/trad-split
 python3.12 -m venv .venv
 .venv/bin/pip install -e .
-ln -s ~/Code/trad-split/.venv/bin/trad-split /usr/local/bin/trad-split   # or anywhere on your PATH
+ln -s ~/Code/trad-split/.venv/bin/trad-split "$(brew --prefix)/bin/trad-split"   # puts it on your PATH
 ```
 
 The first run downloads the model, about 320 MB, into `~/panns_data/`. If you use the python.org installer instead of Homebrew's Python and the download fails with a certificate error, run `Install Certificates.command` from `/Applications/Python 3.x/`.
@@ -110,7 +110,7 @@ Scores are cached, so each retry is quick. Add `--rescan` to rerun the model.
 The command works from Keyboard Maestro (Execute Shell Script), from an Alfred File Action, or from a Folder Action on the folder where you drop memos:
 
 ```sh
-/usr/local/bin/trad-split "$KMVAR_File" --obsidian
+/opt/homebrew/bin/trad-split "$KMVAR_File" --obsidian
 ```
 
 You can AirDrop memos from the phone, or use Share > Save to Files. Voice Memos synced to the Mac through iCloud live in `~/Library/Group Containers/group.com.apple.VoiceMemos.shared/Recordings/`. To read that folder, the Terminal (or Keyboard Maestro) needs Full Disk Access in System Settings > Privacy & Security.
