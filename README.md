@@ -117,6 +117,29 @@ A normal run never overwrites an existing `.RPP` or note. Pass `--force` to repl
 
 You can also render regions directly from Reaper (File > Render > Bounds: Project regions, file name `$region`). Going back through `trad-split` is better, though, because it tags the files and keeps the Obsidian note in step with them.
 
+## App
+
+There is also a window for all of this. It has a file list, checkboxes for the outputs, and an Advanced section with the detection and tune settings. Press Split and the progress shows in the window.
+
+Setup, once:
+
+```sh
+cd ~/Code/trad-split
+.venv/bin/pip install -e '.[gui]'     # adds PySide6 (Qt)
+scripts/make-app.sh                   # builds ~/Applications/Trad Split.app
+```
+
+Then drag `Trad Split.app` from `~/Applications` to the Dock. Run `scripts/make-app.sh` again if you move the repo folder.
+
+To use it:
+
+- Add files with Add Files..., by dragging them into the list, or by dropping them on the app's Dock icon. You can do this while a run is going.
+- Each item is handled the same way as in the Finder Quick Action: a memo or folder of memos is split, a `.RPP` is re-cut from your Reaper edits, and a session note (`.md`) has its named tunes exported.
+- The window opens with the settings from your config file. Changes apply to the next run only, unless you press Save as Defaults. That writes them to `~/.config/trad-split/config.toml` and keeps any comments in the file. Overwrite and Rescan are never saved, because they are meant for one run at a time.
+- Open Session Folder opens the folders from the last run. Stop ends the current run and skips the rest of the list.
+
+While it is open, the window shows in the Dock as a separate Python icon. The Trad Split icon is only the launcher. If the window does not appear, check `~/Library/Logs/trad-split-gui.log`. You can also start it from Terminal with `.venv/bin/trad-split-gui`.
+
 ## Obsidian
 
 Point the output at a folder inside your vault and tell `trad-split` where the vault root is. Links in the note are then vault-relative, so there is no clash when every session has a `Set 1`:
