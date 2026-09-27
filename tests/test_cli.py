@@ -12,8 +12,8 @@ pytestmark = pytest.mark.skipif(not shutil.which("ffmpeg"), reason="needs ffmpeg
 @pytest.fixture
 def memo(tmp_path):
     path = tmp_path / "Session.m4a"
-    subprocess.run(["ffmpeg", "-v", "error", "-f", "lavfi", "-i", "sine=f=440:d=120",
-                    "-c:a", "aac", str(path)], check=True)
+    subprocess.run(["ffmpeg", "-v", "error", "-f", "lavfi", "-i", "sine=f=440:d=120", "-c:a", "aac",
+                    "-metadata", "creation_time=2025-11-22T12:00:00Z", str(path)], check=True)
     return path
 
 
@@ -51,10 +51,10 @@ def test_recut_from_reaper(memo, tmp_path):
     assert names == ["01 Set 1 - Kesh.m4a", "02 Chat.m4a", "03 Set 2.m4a"]
     from trad_split.audio import duration
     assert abs(duration(session / "01 Set 1 - Kesh.m4a") - 45) < 0.2
-    note = (session / "Session.md").read_text()
+    note = (session / "20251122 Session.md").read_text()
     assert "set_count: 2" in note and "![[03 Set 2.m4a]]" in note
     assert read_rpp(rpp)[1][0].name == "Set 1 - Kesh"  # project untouched
-    assert (session / "Session.regions.csv").exists()
+    assert (session / "20251122 Session.regions.csv").exists()
 
 
 def test_sets_only_from_csv(memo, tmp_path):
@@ -144,10 +144,10 @@ def test_output_elsewhere_reuses_scores_next_to_memo(memo, tmp_path, monkeypatch
     vault = tmp_path / "Vault"
     assert cli.main([str(memo), "-o", str(vault / "Sessions"), "--vault", str(vault), "--obsidian",
                      "--sets-only", "--no-reaper", "--config", str(tmp_path / "none.toml")]) == 0
-    session = vault / "Sessions" / "Session"
+    session = vault / "Sessions" / "20251122 Session"
     assert sorted(p.name for p in session.iterdir() if not p.name.startswith(".")) == \
-        ["02 Set 1.m4a", "Session.md"]
-    assert "![[Sessions/Session/02 Set 1.m4a]]" in (session / "Session.md").read_text()
+        ["02 Set 1.m4a", "20251122 Session.md"]
+    assert "![[Sessions/20251122 Session/02 Set 1.m4a]]" in (session / "20251122 Session.md").read_text()
     assert list((tmp_path / "cache").glob("Session-*.npz"))  # copied into the new cache
 
 
@@ -156,3 +156,12 @@ def test_bad_config_gives_clear_error(tmp_path):
     cfg.write_text("output = '/it's broken'\n")
     with pytest.raises(SystemExit, match="not valid TOML"):
         cli.resolve_options(cli.build_parser().parse_args(["x", "--config", str(cfg)]))
+
+
+def test_session_title_adds_date_once(tmp_path):
+    from datetime import datetime
+
+    when = datetime(2025, 11, 22, 21, 40)
+    assert cli.session_title(tmp_path / "The Clock Tavern 22.m4a", when) == "20251122 The Clock Tavern 22"
+    assert cli.session_title(tmp_path / "20251122 Clock.m4a", when) == "20251122 Clock"
+    assert cli.session_title(tmp_path / "20240101 213000.m4a", when) == "20240101 213000"

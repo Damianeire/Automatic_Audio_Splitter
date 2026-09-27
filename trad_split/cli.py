@@ -122,6 +122,16 @@ def safe_filename(name: str) -> str:
     return name or "untitled"
 
 
+def session_title(memo: Path, recorded) -> str:
+    """'20251122 The Clock Tavern 22': recording date first so sessions sort in order.
+
+    Names that already start with a yyyymmdd date are left alone.
+    """
+    if re.match(r"(19|20)\d{6}\b", memo.stem):
+        return memo.stem
+    return f"{recorded:%Y%m%d} {memo.stem}"
+
+
 def detect(memo: Path, session_dir: Path, length: float, opts: dict,
            classifier_cache: dict) -> tuple[list[Segment], dict]:
     from . import classify
@@ -167,7 +177,7 @@ def export_audio(memo: Path, session_dir: Path, title: str, segments: list[Segme
     for k, (i, s) in enumerate(chosen, 1):
         dst = session_dir / f"{i + 1:02d} {safe_filename(s.name)}{ext}"
         audio.cut(memo, dst, s.start, s.end, reencode=opts["reencode"], tags={
-            "title": s.name, "album": f"{recorded:%Y%m%d} {title}", "artist": "Session",
+            "title": s.name, "album": title, "artist": "Session",
             "track": f"{k}/{len(chosen)}", "date": f"{recorded:%Y-%m-%d}",
             "comment": f"{s.start:.1f}-{s.end:.1f}s of {memo.name}",
         })
@@ -180,15 +190,15 @@ def process(memo: Path, opts: dict, *, edited: list[Segment] | None = None,
             session_dir: Path | None = None, classifier_cache: dict | None = None) -> None:
     from .outputs import clock, obsidian_note, plot
 
-    title = memo.stem
-    if session_dir is None:
-        session_dir = (opts["output"] or memo.parent) / safe_filename(title)
-    session_dir.mkdir(parents=True, exist_ok=True)
     print(f"{memo.name}", file=sys.stderr)
-
     length = audio.duration(memo)
     recorded, recorded_from = audio.recorded_at(memo)
     print(f"  recorded {recorded:%Y-%m-%d %H:%M} (from {recorded_from})", file=sys.stderr)
+
+    title = session_title(memo, recorded)
+    if session_dir is None:
+        session_dir = (opts["output"] or memo.parent) / safe_filename(title)
+    session_dir.mkdir(parents=True, exist_ok=True)
     scores = None
     if edited is None:
         segments, scores = detect(memo, session_dir, length, opts, classifier_cache or {})

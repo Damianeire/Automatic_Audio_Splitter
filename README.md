@@ -4,7 +4,7 @@ Splits a recording of a trad session (for example an iPhone Voice Memo) into the
 
 For each memo it can produce:
 
-- Audio files: `01 Chat 1.m4a`, `02 Set 1.m4a`, `03 Chat 2.m4a` and so on, tagged with the album `yyyymmdd <memo name>` using the recording date. By default they are cut with stream copy, so it is fast and there is no quality loss. `--sets-only` skips the chat.
+- Audio files: `01 Chat 1.m4a`, `02 Set 1.m4a`, `03 Chat 2.m4a` and so on, tagged with the album `yyyymmdd <memo name>`. By default they are cut with stream copy, so it is fast and there is no quality loss. `--sets-only` skips the chat.
 - A Reaper project, `<memo>.RPP`. It has the memo on one track and a coloured region for each segment, so you can check the boundaries, drag them, rename regions, and cut again from your edits.
 - A regions CSV in the same format as Reaper's Region/Marker Manager.
 - An Obsidian note with YAML frontmatter, one section per set with an embedded player, and `tunes::` / `notes::` Dataview fields for you to fill in.
@@ -46,7 +46,7 @@ trad-split memo.m4a --plot                          # also save the score plot
 trad-split memo.m4a -o ~/Music/Sessions             # choose where session folders go
 ```
 
-Each memo gets its own folder, named after the memo and placed next to it unless you give `-o`. The folder holds the audio files, the `.RPP`, the CSV, and the note and plot if you asked for them.
+Each memo gets its own session folder, placed next to the memo unless you give `-o`. The folder is named with the recording date followed by the memo name, for example `20251122 The Clock Tavern 22`, so sessions sort in date order. Names that already start with a date are left alone. The project, CSV, note and plot inside the folder use the same name, and so does the album tag. The folder holds the audio files, the `.RPP`, the CSV, and the note and plot if you asked for them.
 
 ### Checking and correcting in Reaper
 
