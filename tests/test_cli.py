@@ -17,6 +17,14 @@ def memo(tmp_path):
     return path
 
 
+def probe_chapters(path):
+    import json
+
+    out = subprocess.run(["ffprobe", "-v", "error", "-print_format", "json", "-show_chapters", str(path)],
+                         check=True, capture_output=True).stdout
+    return json.loads(out)["chapters"]
+
+
 def edit_rpp(rpp, memo):
     rpp.write_text(f"""<REAPER_PROJECT 0.1 "7.0" 0
   MARKER 1 5 "Set 1 - Kesh" 1
@@ -25,6 +33,7 @@ def edit_rpp(rpp, memo):
   MARKER 2 60 "" 1
   MARKER 3 60 "Set 2" 1
   MARKER 3 110 "" 1
+  MARKER 4 80 "The Silver Spear" 0
   <TRACK
     <ITEM
       POSITION 0
@@ -54,6 +63,11 @@ def test_recut_from_reaper(memo, tmp_path):
     note = (session / "20251122 Session.md").read_text()
     assert "set_count: 2" in note and "![[03 Set 2.m4a]]" in note
     assert read_rpp(rpp)[1][0].name == "Set 1 - Kesh"  # project untouched
+    assert "```loops\nfile: 03 Set 2.m4a\n0:00 - 0:20 | Tune 1\n0:20 - 0:50 | The Silver Spear\n```" in note
+    chapters = probe_chapters(session / "03 Set 2.m4a")
+    assert [(round(float(c["start_time"])), c["tags"]["title"]) for c in chapters] == \
+        [(0, "Tune 1"), (20, "The Silver Spear")]
+    assert probe_chapters(session / "01 Set 1 - Kesh.m4a") == []  # one tune, no chapters
     assert (session / "20251122 Session.regions.csv").exists()
 
 
@@ -165,3 +179,43 @@ def test_session_title_adds_date_once(tmp_path):
     assert cli.session_title(tmp_path / "The Clock Tavern 22.m4a", when) == "20251122 The Clock Tavern 22"
     assert cli.session_title(tmp_path / "20251122 Clock.m4a", when) == "20251122 Clock"
     assert cli.session_title(tmp_path / "20240101 213000.m4a", when) == "20240101 213000"
+
+
+def test_detects_tunes_end_to_end(tmp_path, monkeypatch):
+    """Scores say one long set; tune detection finds the change and it reaches every output."""
+    import sys
+
+    import numpy as np
+
+    sys.path.insert(0, str(__import__("pathlib").Path(__file__).parent))
+    from synth import SR, set_of, tune
+
+    from trad_split import classify
+
+    audio = set_of(tune(62, seed=1), tune(67, seed=2))
+    wav = tmp_path / "raw.wav"
+    import wave
+
+    with wave.open(str(wav), "wb") as w:
+        w.setnchannels(1), w.setsampwidth(2), w.setframerate(SR)
+        w.writeframes((audio * 32767).astype("<i2").tobytes())
+    memo = tmp_path / "Pub.m4a"
+    subprocess.run(["ffmpeg", "-v", "error", "-i", str(wav), "-c:a", "aac",
+                    "-metadata", "creation_time=2025-11-22T12:00:00Z", str(memo)], check=True)
+
+    monkeypatch.setattr(classify, "CACHE_DIR", tmp_path / "cache")
+    monkeypatch.setattr(classify, "Classifier", None)
+    n = int(len(audio) / SR / 0.5) + 1
+    lo = np.full(n, 3.0)
+    classify.save_scores(classify.cache_path(memo), {"music": lo, "chat": lo, "log_odds": lo,
+                                                     "hop": np.float32(0.5)}, memo.stat().st_size)
+
+    assert cli.main([str(memo), "--obsidian", "--reaper", "--config", str(tmp_path / "none.toml")]) == 0
+    session = tmp_path / "20251122 Pub"
+    set_file = session / "01 Set 1.m4a"
+    chapters = probe_chapters(set_file)
+    assert [c["tags"]["title"] for c in chapters] == ["Tune 1", "Tune 2"]
+    assert abs(float(chapters[1]["start_time"]) - 137.1) < 5
+    assert "| Tune 2" in (session / "20251122 Pub.md").read_text()
+    regions = read_rpp(session / "20251122 Pub.RPP")[1]
+    assert [m.name for m in regions[0].marks] == ["Tune 2"]

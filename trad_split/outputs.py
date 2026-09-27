@@ -17,6 +17,22 @@ def clock(seconds: float) -> str:
     return f"{h}:{m:02d}:{s:02d}" if h else f"{m}:{s:02d}"
 
 
+def loop_time(seconds: float) -> str:
+    """m:ss or m:ss.s, the format the audio-loop-player plugin reads."""
+    tenths = int(round(max(seconds, 0) * 10))
+    m, rest = divmod(tenths, 600)
+    s, t = divmod(rest, 10)
+    return f"{m}:{s:02d}" + (f".{t}" if t else "")
+
+
+def loops_block(file_link: str, segment: Segment) -> list[str]:
+    """Tune sections for the audio-loop-player plugin, times relative to the set file."""
+    lines = ["```loops", f"file: {file_link}"]
+    for a, b, name in segment.tunes():
+        lines.append(f"{loop_time(a - segment.start)} - {loop_time(b - segment.start)} | {name}")
+    return lines + ["```"]
+
+
 def _yaml_str(s: str) -> str:
     return '"' + s.replace("\\", "\\\\").replace('"', '\\"') + '"'
 
@@ -62,7 +78,9 @@ def obsidian_note(*, title: str, source: Path, recorded: datetime, length: float
             "",
         ]
         if i in files:
-            lines += [f"![[{link(files[i])}]]", ""]
+            lines += [f"![[{link(files[i])}]]", *loops_block(link(files[i]), s), ""]
+        elif len(s.tunes()) > 1:
+            lines += [f"- {clock(a)} {name}" for a, _, name in s.tunes()] + [""]
         lines += ["tunes:: ", "notes:: ", ""]
 
     lines += ["## Timeline", "", "| # | Segment | Start | End | Length |", "|---|---|---|---|---|"]
@@ -96,6 +114,8 @@ def plot(path: Path, scores: dict[str, np.ndarray], segments: list[Segment], tit
         colour = "tab:green" if s.kind == SET else "tab:gray"
         for ax in (ax1, ax2):
             ax.axvspan(s.start / 60, s.end / 60, color=colour, alpha=0.15, lw=0)
+            for m in s.marks:
+                ax.axvline(m.time / 60, color="tab:green", ls="--", lw=0.8)
         if s.kind == SET:
             ax1.text((s.start + s.end) / 120, 0.95, s.name, ha="center", va="top", fontsize=8)
     fig.tight_layout()

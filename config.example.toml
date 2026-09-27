@@ -21,4 +21,8 @@ pad_start = 1.5         # seconds kept before each set
 pad_end = 3.5           # seconds kept after each set, keeps the applause
 switch_penalty = 12.0   # higher = fewer, longer segments
 bias = 0.0              # positive favours music, negative favours chat
+# Tune changes within sets
+tunes = true            # mark where tunes change (chapters, note sections, Reaper markers)
+min_tune = 60.0         # seconds; shortest tune
+tune_sensitivity = 1.0  # higher marks more changes, lower fewer
 # device = "auto"       # auto, cpu, mps, cuda

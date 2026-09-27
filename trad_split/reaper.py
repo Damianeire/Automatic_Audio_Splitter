@@ -1,6 +1,7 @@
 """Reaper project and regions CSV: write detected segments out, read edits back.
 
 A region named "Chat..." is treated as chat; every other region is a set.
+Plain markers inside a set are tune changes, named after the tune they start.
 """
 
 from __future__ import annotations
@@ -10,7 +11,7 @@ import re
 import uuid
 from pathlib import Path
 
-from .segment import CHAT, SET, Segment
+from .segment import CHAT, SET, Mark, Segment
 
 # Reaper stores colours as native 0xBBGGRR with bit 24 set to mean "custom colour".
 SET_RGB = (70, 160, 90)
@@ -40,6 +41,13 @@ def _quote(s: str) -> str:
     return "`" + s.replace("`", "'") + "`"
 
 
+def _attach_marks(segments: list[Segment], marks: list[Mark]) -> None:
+    """Give each set the markers that fall inside it (or within 2 s of its start)."""
+    for s in segments:
+        if s.kind == SET:
+            s.marks = [m for m in marks if s.start - 2 <= m.time < s.end]
+
+
 def write_rpp(path: Path, source: Path, length: float, segments: list[Segment],
               sample_rate: int = 48000) -> None:
     source = source.resolve()
@@ -54,6 +62,12 @@ def write_rpp(path: Path, source: Path, length: float, segments: list[Segment],
         colour = reaper_colour(SET_RGB if s.kind == SET else CHAT_RGB)
         lines.append(f"  MARKER {i} {s.start:.6f} {_quote(s.name)} 1 {colour}")
         lines.append(f'  MARKER {i} {s.end:.6f} "" 1')
+    # Tune changes as plain markers, numbered after the regions.
+    n = len(segments)
+    for s in segments:
+        for m in s.marks:
+            n += 1
+            lines.append(f"  MARKER {n} {m.time:.6f} {_quote(m.name)} 0")
     lines += [
         "  <TRACK {" + str(uuid.uuid4()).upper() + "}",
         f"    NAME {_quote(source.stem)}",
@@ -88,6 +102,7 @@ def read_rpp(path: Path) -> tuple[Path | None, list[Segment]]:
     text = path.read_text(encoding="utf-8", errors="replace")
     starts: dict[int, tuple[float, str]] = {}
     regions: list[Segment] = []
+    marks: list[Mark] = []
     source: Path | None = None
     item_pos = item_offs = None
     in_item = False
@@ -101,7 +116,8 @@ def read_rpp(path: Path) -> tuple[Path | None, list[Segment]]:
         if head == "MARKER" and len(tok) >= 5:
             idx, pos, name, flags = int(tok[1]), float(tok[2]), tok[3], int(tok[4])
             if not flags & 1:
-                continue  # plain marker, not a region
+                marks.append(Mark(pos, name))  # plain marker: a tune change
+                continue
             if idx in starts:
                 start, rname = starts.pop(idx)
                 regions.append(Segment(start, pos, kind_from_name(rname), rname))
@@ -123,7 +139,10 @@ def read_rpp(path: Path) -> tuple[Path | None, list[Segment]]:
     for r in regions:
         r.start += shift
         r.end += shift
+    for m in marks:
+        m.time += shift
     regions.sort(key=lambda r: r.start)
+    _attach_marks(regions, marks)
     return source, regions
 
 
@@ -134,6 +153,9 @@ def write_csv(path: Path, segments: list[Segment]) -> None:
         w.writerow(["#", "Name", "Start", "End", "Length"])
         for i, s in enumerate(segments, 1):
             w.writerow([f"R{i}", s.name, f"{s.start:.3f}", f"{s.end:.3f}", f"{s.duration:.3f}"])
+        marks = [m for s in segments for m in s.marks]
+        for i, m in enumerate(marks, 1):
+            w.writerow([f"M{i}", m.name, f"{m.time:.3f}", "", ""])
 
 
 def _seconds(value: str) -> float:
@@ -148,12 +170,14 @@ def _seconds(value: str) -> float:
 def read_csv(path: Path) -> list[Segment]:
     with open(path, newline="", encoding="utf-8-sig") as f:
         rows = list(csv.DictReader(f))
-    segs = []
+    segs, marks = [], []
     for row in rows:
-        ident = (row.get("#") or "").strip()
-        if ident and not ident.upper().startswith("R"):
-            continue  # markers, not regions
+        ident = (row.get("#") or "").strip().upper()
         name = (row.get("Name") or "").strip()
-        segs.append(Segment(_seconds(row["Start"]), _seconds(row["End"]), kind_from_name(name), name))
+        if ident.startswith("M"):
+            marks.append(Mark(_seconds(row["Start"]), name))
+        elif not ident or ident.startswith("R"):
+            segs.append(Segment(_seconds(row["Start"]), _seconds(row["End"]), kind_from_name(name), name))
     segs.sort(key=lambda s: s.start)
+    _attach_marks(segs, marks)
     return segs

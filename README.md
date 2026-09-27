@@ -24,6 +24,29 @@ For each memo it can produce:
 
 The model scores are cached in `~/Library/Caches/trad-split/`, keyed on the memo file. Re-running with different tuning settings or a different output folder therefore takes seconds. If you move, rename or edit the memo, it is analysed again.
 
+### Tune changes within sets
+
+Sets are not split at tune changes, but the changes are marked:
+
+- **Chapters** are embedded in each set file, so Music, QuickTime, VLC and most players can skip from tune to tune.
+- **The Obsidian note** gets a `loops` block under each set for the audio-loop-player plugin. Times are relative to the set file:
+
+  ````
+  ```loops
+  file: Sessions/20251122 The Clock Tavern 22/02 Set 1.m4a
+  0:00 - 2:18 | Tune 1
+  2:18 - 4:34.3 | Tune 2 ?
+  ```
+  ````
+
+- **Reaper markers** are placed inside each set region, named `Tune 2`, `Tune 3` and so on.
+
+How it works: a tune is played round two or three times, so after its first round the music keeps matching what was heard a minute earlier. A new tune breaks that pattern. This means it works even when two tunes share a key and rhythm. It can miss a change if a tune is played only once. A name ending in `?` marks a weak detection.
+
+Correcting in Reaper: move, delete or add markers, and rename them with the tune names. A marker at the very start of a set names the first tune. Then re-cut with `--from-reaper`, and the names carry through to the chapters and the note.
+
+Settings: `--min-tune` (default 60 s) and `--tune-sensitivity` (default 1; higher finds more). Use `--no-tunes` to turn detection off. With `--plot`, detected changes show as dashed lines.
+
 ## Setup (Mac)
 
 ```sh

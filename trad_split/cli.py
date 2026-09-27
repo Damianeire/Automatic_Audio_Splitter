@@ -29,6 +29,9 @@ DEFAULTS = {
     "device": "auto",
     "model": None,
     "pad": None,  # shortcut for pad_start and pad_end together
+    "tunes": True,  # mark tune changes inside sets
+    "min_tune": 60.0,
+    "tune_sensitivity": 1.0,
     **{f.name: f.default for f in fields(SegmentParams)},
 }
 
@@ -85,6 +88,12 @@ def build_parser() -> argparse.ArgumentParser:
     det.add_argument("--switch-penalty", type=float, help="higher = fewer, longer segments (default 12)")
     det.add_argument("--bias", type=float, help="positive favours music, negative chat (default 0)")
     det.add_argument("--rescan", action=B, help="ignore cached model scores")
+
+    tun = p.add_argument_group("tune changes within sets")
+    tun.add_argument("--tunes", action=B, help="mark where tunes change inside each set (default on)")
+    tun.add_argument("--min-tune", type=float, help="shortest tune in seconds (default 60)")
+    tun.add_argument("--tune-sensitivity", type=float,
+                     help="higher marks more changes, lower fewer (default 1.0)")
     det.add_argument("--device", help="torch device: auto, cpu, mps, cuda")
     det.add_argument("--model", type=Path, help="path to Cnn14_DecisionLevelMax checkpoint")
     return p
@@ -163,6 +172,27 @@ def detect(memo: Path, session_dir: Path, length: float, opts: dict,
     return segment(scores["log_odds"], float(scores["hop"]), length, params), scores
 
 
+def detect_tunes(memo: Path, segments: list[Segment], opts: dict) -> None:
+    """Fill in each set's tune changes."""
+    from . import classify, tunes
+    from .segment import Mark
+
+    cache = classify.cache_path(memo).with_suffix(".chroma.npz")
+    size = memo.stat().st_size
+    feats = None if opts["rescan"] else classify.load_scores(cache, size)
+    if feats is None:
+        print("  listening for tune changes", file=sys.stderr)
+        feats = tunes.features(audio.decode(memo, tunes.SAMPLE_RATE))
+        classify.save_scores(cache, feats, size)
+    params = tunes.TuneParams(min_tune=opts["min_tune"], sensitivity=opts["tune_sensitivity"])
+    for s in segments:
+        if s.kind != SET:
+            continue
+        changes, _ = tunes.find_changes(feats["chroma"], s.start, s.end, params, float(feats["hop"]))
+        s.marks = [Mark(c.time, f"Tune {k}" + ("" if c.confident else " ?"))
+                   for k, c in enumerate(changes, 2)]
+
+
 def export_audio(memo: Path, session_dir: Path, title: str, segments: list[Segment],
                  opts: dict, recorded) -> dict[int, Path]:
     # Remove what the previous run wrote so renamed regions do not leave stale files.
@@ -176,7 +206,8 @@ def export_audio(memo: Path, session_dir: Path, title: str, segments: list[Segme
     files: dict[int, Path] = {}
     for k, (i, s) in enumerate(chosen, 1):
         dst = session_dir / f"{i + 1:02d} {safe_filename(s.name)}{ext}"
-        audio.cut(memo, dst, s.start, s.end, reencode=opts["reencode"], tags={
+        chapters = [(a - s.start, b - s.start, name) for a, b, name in s.tunes()] if s.kind == SET else None
+        audio.cut(memo, dst, s.start, s.end, reencode=opts["reencode"], chapters=chapters, tags={
             "title": s.name, "album": title, "artist": "Session",
             "track": f"{k}/{len(chosen)}", "date": f"{recorded:%Y-%m-%d}",
             "comment": f"{s.start:.1f}-{s.end:.1f}s of {memo.name}",
@@ -202,6 +233,8 @@ def process(memo: Path, opts: dict, *, edited: list[Segment] | None = None,
     scores = None
     if edited is None:
         segments, scores = detect(memo, session_dir, length, opts, classifier_cache or {})
+        if opts["tunes"]:
+            detect_tunes(memo, segments, opts)
     else:
         segments = [s for s in edited if s.end > s.start]
 
@@ -210,6 +243,9 @@ def process(memo: Path, opts: dict, *, edited: list[Segment] | None = None,
           f"in {clock(length)}", file=sys.stderr)
     for s in segments:
         print(f"    {clock(s.start):>8}  {clock(s.end):>8}  {s.name}", file=sys.stderr)
+        if s.kind == SET and len(s.tunes()) > 1:
+            for a, _, name in s.tunes():
+                print(f"    {'':>8}  {clock(a):>8}    {name}", file=sys.stderr)
 
     if opts["reaper"]:
         rpp = session_dir / f"{title}.RPP"

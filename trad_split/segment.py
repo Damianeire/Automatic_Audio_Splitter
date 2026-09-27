@@ -5,7 +5,7 @@ Pure numpy, no model, so everything here can be tested with synthetic scores.
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
 import numpy as np
 
@@ -14,15 +14,40 @@ CHAT = "chat"
 
 
 @dataclass
+class Mark:
+    """A tune change inside a set. A name ending in "?" marks a guess."""
+    time: float  # seconds from the start of the recording
+    name: str
+
+
+@dataclass
 class Segment:
     start: float  # seconds
     end: float  # seconds
     kind: str  # SET or CHAT
     name: str = ""
+    marks: list[Mark] = field(default_factory=list)  # tune changes, sets only
 
     @property
     def duration(self) -> float:
         return self.end - self.start
+
+    def tunes(self) -> list[tuple[float, float, str]]:
+        """(start, end, name) of each tune in the set, in recording time.
+
+        The first tune starts with the set; each mark starts the next one.
+        A mark within 2 s of the set's start just names the first tune.
+        """
+        first = "Tune 1"
+        inner = []
+        for m in sorted(self.marks, key=lambda m: m.time):
+            if abs(m.time - self.start) <= 2:
+                first = m.name
+            elif self.start < m.time < self.end:
+                inner.append(m)
+        starts = [self.start] + [m.time for m in inner]
+        ends = starts[1:] + [self.end]
+        return list(zip(starts, ends, [first] + [m.name for m in inner]))
 
 
 @dataclass

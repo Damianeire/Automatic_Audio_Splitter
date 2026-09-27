@@ -1,11 +1,12 @@
 from pathlib import Path
 
 from trad_split.reaper import read_csv, read_rpp, write_csv, write_rpp
-from trad_split.segment import CHAT, SET, Segment
+from trad_split.segment import CHAT, SET, Mark, Segment
 
 
 def sample():
-    return [Segment(0, 12.5, CHAT, "Chat 1"), Segment(12.5, 300.25, SET, "Set 1"),
+    return [Segment(0, 12.5, CHAT, "Chat 1"),
+            Segment(12.5, 300.25, SET, "Set 1", [Mark(130.5, "Tune 2"), Mark(220, "Tune 3 ?")]),
             Segment(300.25, 330, CHAT, "Chat 2"), Segment(330, 600, SET, "Set 2")]
 
 
@@ -20,6 +21,8 @@ def test_rpp_round_trip(tmp_path):
     assert source == memo.resolve()
     assert [(r.start, r.end, r.kind, r.name) for r in regions] == \
         [(s.start, s.end, s.kind, s.name) for s in sample()]
+    assert regions[1].marks == sample()[1].marks
+    assert all(r.marks == [] for r in regions if r.kind == CHAT)
 
 
 def test_rpp_as_reaper_saves_it(tmp_path):
@@ -53,6 +56,7 @@ def test_rpp_as_reaper_saves_it(tmp_path):
     assert [r.name for r in regions] == ["Set 1 - Silver Spear, Mason's Apron", "Chat", 'Set 2 "the reels"']
     assert [r.kind for r in regions] == [SET, CHAT, SET]
     assert regions[0].start == 10.4 and regions[0].end == 299  # item moved 2 s right
+    assert regions[0].marks == [Mark(148, "tuning")]  # plain marker inside Set 1 is a tune change
 
 
 def test_csv_round_trip(tmp_path):
@@ -61,6 +65,7 @@ def test_csv_round_trip(tmp_path):
     got = read_csv(p)
     assert [(s.start, s.end, s.kind, s.name) for s in got] == \
         [(s.start, s.end, s.kind, s.name) for s in sample()]
+    assert got[1].marks == sample()[1].marks
 
 
 def test_csv_reaper_export_with_clock_times(tmp_path):
