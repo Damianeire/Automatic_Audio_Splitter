@@ -29,7 +29,8 @@ class Segment:
 class SegmentParams:
     min_set: float = 40.0  # a set shorter than this is folded into the chat around it
     min_chat: float = 4.0  # a gap shorter than this is folded into the sets around it
-    pad: float = 1.5  # extend each set this far into the neighbouring chat
+    pad_start: float = 1.5  # extend each set this far back into the chat before it
+    pad_end: float = 3.5  # and this far into the chat after it, to keep the applause
     switch_penalty: float = 12.0  # cost of changing state, in log-odds units
     bias: float = 0.0  # positive favours music, negative favours chat
     clip: float = 3.0  # cap per-frame evidence so one loud frame cannot dominate
@@ -109,8 +110,8 @@ def enforce_min_durations(segs: list[Segment], min_set: float, min_chat: float) 
     return segs
 
 
-def pad_sets(segs: list[Segment], pad: float) -> list[Segment]:
-    """Grow each set into the chat either side so first and last notes survive.
+def pad_sets(segs: list[Segment], pad_start: float, pad_end: float) -> list[Segment]:
+    """Grow each set into the chat either side so first notes and applause survive.
 
     A chat between two sets gives up at most half its length to each.
     """
@@ -122,12 +123,11 @@ def pad_sets(segs: list[Segment], pad: float) -> list[Segment]:
         after = i + 1 < len(segs) and segs[i + 1].kind == SET
         share = s.duration / (2 if before and after else 1)
         # Never swallow a chat whole; leave at least a sliver.
-        take = min(pad, share * 0.9)
         if before:
-            s.start += take
+            s.start += min(pad_end, share * 0.9)
             segs[i - 1].end = s.start
         if after:
-            s.end -= take
+            s.end -= min(pad_start, share * 0.9)
             segs[i + 1].start = s.end
     return segs
 
@@ -154,5 +154,5 @@ def segment(log_odds: np.ndarray, hop: float, duration: float,
         return []
     segs[-1].end = duration  # last frame may be partial
     segs = enforce_min_durations(segs, p.min_set, p.min_chat)
-    segs = pad_sets(segs, p.pad)
+    segs = pad_sets(segs, p.pad_start, p.pad_end)
     return name_segments(segs)

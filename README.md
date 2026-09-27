@@ -4,7 +4,7 @@ Splits a recording of a trad session (for example an iPhone Voice Memo) into the
 
 For each memo it can produce:
 
-- Audio files: `01 Chat 1.m4a`, `02 Set 1.m4a`, `03 Chat 2.m4a` and so on. By default they are cut with stream copy, so it is fast and there is no quality loss. `--sets-only` skips the chat.
+- Audio files: `01 Chat 1.m4a`, `02 Set 1.m4a`, `03 Chat 2.m4a` and so on, tagged with the album `yyyymmdd <memo name>` using the recording date. By default they are cut with stream copy, so it is fast and there is no quality loss. `--sets-only` skips the chat.
 - A Reaper project, `<memo>.RPP`. It has the memo on one track and a coloured region for each segment, so you can check the boundaries, drag them, rename regions, and cut again from your edits.
 - A regions CSV in the same format as Reaper's Region/Marker Manager.
 - An Obsidian note with YAML frontmatter, one section per set with an embedded player, and `tunes::` / `notes::` Dataview fields for you to fill in.
@@ -20,7 +20,7 @@ For each memo it can produce:
    The per-frame score is `log(music) - log(chat)`.
 3. A two-state Viterbi pass smooths the scores. Changing state has a cost, so someone talking over a tune, or a quiet bar, does not split a set.
 4. Any set under 40 s is folded into the chat around it, which catches tuning up and noodling. Any chat under 4 s is folded into the sets around it.
-5. Each set is extended 1.5 s into the neighbouring chat, so the first and last notes are not clipped.
+5. Each set starts 1.5 s early and runs 3.5 s past the last note, so the first notes and the applause are kept.
 
 The model scores are cached next to the output (`<memo>.scores.npz`). Re-running with different tuning settings therefore takes seconds.
 
@@ -101,7 +101,8 @@ Run with `--plot` and look at `<memo>.png`. The top panel shows the music and ch
 | Chat kept as part of a set | `--bias -0.5` to `-1` |
 | Short breaks between sets missed | a lower `--min-chat` or `--switch-penalty` |
 | Tuning up or a few bars of noodling shows up as a set | a higher `--min-set` (e.g. 60) |
-| First or last notes clipped | a higher `--pad` (e.g. 3) |
+| First notes clipped | a higher `--pad-start` (e.g. 3) |
+| Applause or last notes cut off | a higher `--pad-end` (e.g. 5) |
 
 Scores are cached, so each retry is quick. Add `--rescan` to rerun the model.
 

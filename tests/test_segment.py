@@ -16,7 +16,7 @@ def kinds(segs):
 
 def test_basic_set_chat_set():
     lo = frames((60, 3), (20, -3), (90, 3))
-    segs = segment(lo, HOP, 170, SegmentParams(pad=0))
+    segs = segment(lo, HOP, 170, SegmentParams(pad_start=0, pad_end=0))
     assert kinds(segs) == [SET, CHAT, SET]
     assert [s.name for s in segs] == ["Set 1", "Chat 1", "Set 2"]
     assert abs(segs[1].start - 60) <= 1 and abs(segs[1].end - 80) <= 1
@@ -74,9 +74,16 @@ def test_min_duration_flips_shortest_first():
     assert out[0].end == 204
 
 
-def test_padding_moves_boundaries_but_keeps_chat():
+def test_padding_is_asymmetric():
+    segs = runs(np.array([0] * 20 + [1] * 60 + [0] * 30 + [1] * 60 + [0] * 20, dtype=bool), 1.0)
+    out = pad_sets(segs, pad_start=1.5, pad_end=3.5)
+    assert [(s.start, s.end) for s in out] == [
+        (0, 18.5), (18.5, 83.5), (83.5, 108.5), (108.5, 173.5), (173.5, 190)]
+
+
+def test_padding_never_swallows_a_short_chat():
     segs = runs(np.array([1] * 60 + [0] * 3 + [1] * 60, dtype=bool), 1.0)
-    out = pad_sets(segs, pad=2)
+    out = pad_sets(segs, pad_start=2, pad_end=5)
     chat = out[1]
     assert chat.duration > 0
     assert out[0].end == chat.start and chat.end == out[2].start

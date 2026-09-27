@@ -28,6 +28,7 @@ DEFAULTS = {
     "rescan": False,
     "device": "auto",
     "model": None,
+    "pad": None,  # shortcut for pad_start and pad_end together
     **{f.name: f.default for f in fields(SegmentParams)},
 }
 
@@ -74,7 +75,10 @@ def build_parser() -> argparse.ArgumentParser:
     det = p.add_argument_group("detection tuning")
     det.add_argument("--min-set", type=float, help="shortest set in seconds (default 40)")
     det.add_argument("--min-chat", type=float, help="shortest chat in seconds (default 4)")
-    det.add_argument("--pad", type=float, help="seconds added to each end of a set (default 1.5)")
+    det.add_argument("--pad-start", type=float, help="seconds kept before each set (default 1.5)")
+    det.add_argument("--pad-end", type=float,
+                     help="seconds kept after each set, keeps the applause (default 3.5)")
+    det.add_argument("--pad", type=float, help="set both --pad-start and --pad-end")
     det.add_argument("--switch-penalty", type=float, help="higher = fewer, longer segments (default 12)")
     det.add_argument("--bias", type=float, help="positive favours music, negative chat (default 0)")
     det.add_argument("--rescan", action=B, help="ignore cached model scores")
@@ -84,12 +88,13 @@ def build_parser() -> argparse.ArgumentParser:
 
 
 def resolve_options(args: argparse.Namespace) -> dict:
+    cli_values = {k: getattr(args, k, None) for k in DEFAULTS}
     opts = dict(DEFAULTS)
-    opts.update(load_config(args.config))
-    for key in DEFAULTS:
-        value = getattr(args, key, None)
-        if value is not None:
-            opts[key] = value
+    # Config, then command line; within each, --pad first so the specific pads win.
+    for layer in (load_config(args.config), {k: v for k, v in cli_values.items() if v is not None}):
+        if layer.get("pad") is not None:
+            opts["pad_start"] = opts["pad_end"] = layer["pad"]
+        opts.update({k: v for k, v in layer.items() if k != "pad"})
     for key in ("output", "vault", "model"):
         if opts[key] is not None:
             opts[key] = Path(opts[key]).expanduser()
@@ -149,7 +154,7 @@ def export_audio(memo: Path, session_dir: Path, title: str, segments: list[Segme
     for k, (i, s) in enumerate(chosen, 1):
         dst = session_dir / f"{i + 1:02d} {safe_filename(s.name)}{ext}"
         audio.cut(memo, dst, s.start, s.end, reencode=opts["reencode"], tags={
-            "title": s.name, "album": title, "artist": "Session",
+            "title": s.name, "album": f"{recorded:%Y%m%d} {title}", "artist": "Session",
             "track": f"{k}/{len(chosen)}", "date": f"{recorded:%Y-%m-%d}",
             "comment": f"{s.start:.1f}-{s.end:.1f}s of {memo.name}",
         })
@@ -169,7 +174,8 @@ def process(memo: Path, opts: dict, *, edited: list[Segment] | None = None,
     print(f"{memo.name}", file=sys.stderr)
 
     length = audio.duration(memo)
-    recorded = audio.recorded_at(memo)
+    recorded, recorded_from = audio.recorded_at(memo)
+    print(f"  recorded {recorded:%Y-%m-%d %H:%M} (from {recorded_from})", file=sys.stderr)
     scores = None
     if edited is None:
         segments, scores = detect(memo, session_dir, length, opts, classifier_cache or {})

@@ -65,6 +65,46 @@ def test_sets_only_from_csv(memo, tmp_path):
     assert sorted(p.name for p in tmp_path.glob("*.m4a") if p != memo) == ["02 Set 1.m4a", "04 Set 2.m4a"]
 
 
+def test_pad_shortcut_and_specific_pads(tmp_path):
+    cfg = tmp_path / "c.toml"
+    cfg.write_text("pad = 2\npad_end = 6\n")
+    parse = cli.build_parser().parse_args
+    opts = cli.resolve_options(parse(["x", "--config", str(cfg)]))
+    assert (opts["pad_start"], opts["pad_end"]) == (2, 6)
+    opts = cli.resolve_options(parse(["x", "--config", str(cfg), "--pad", "1"]))
+    assert (opts["pad_start"], opts["pad_end"]) == (1, 1)
+    opts = cli.resolve_options(parse(["x", "--config", str(tmp_path / "none"), "--pad-end", "4"]))
+    assert (opts["pad_start"], opts["pad_end"]) == (1.5, 4)
+
+
+def test_album_uses_recording_date(tmp_path):
+    from datetime import datetime, timezone
+
+    from trad_split.audio import probe, recorded_at
+
+    memo = tmp_path / "Clock.m4a"
+    subprocess.run(["ffmpeg", "-v", "error", "-f", "lavfi", "-i", "sine=f=440:d=30", "-c:a", "aac",
+                    "-metadata", "creation_time=2025-11-22T21:40:00Z", str(memo)], check=True)
+    expected = datetime(2025, 11, 22, 21, 40, tzinfo=timezone.utc).astimezone().replace(tzinfo=None)
+    assert recorded_at(memo) == (expected, "file metadata")
+
+    csv = tmp_path / "r.csv"
+    csv.write_text("#,Name,Start,End\nR1,Set 1,0,20\n")
+    assert cli.main([str(memo), "--from-csv", str(csv), "--no-reaper", "--config", str(tmp_path / "none")]) == 0
+    tags = probe(tmp_path / "01 Set 1.m4a")["format"]["tags"]
+    assert tags["album"] == f"{expected:%Y%m%d} Clock"
+
+
+def test_recorded_at_falls_back_to_file_dates(tmp_path):
+    from trad_split.audio import recorded_at
+
+    memo = tmp_path / "plain.wav"
+    subprocess.run(["ffmpeg", "-v", "error", "-f", "lavfi", "-i", "sine=d=1", "-fflags", "+bitexact",
+                    "-map_metadata", "-1", str(memo)], check=True)
+    _, source = recorded_at(memo)
+    assert source in ("file created date", "file modified date")
+
+
 def test_config_file(tmp_path):
     cfg = tmp_path / "c.toml"
     cfg.write_text('output = "~/Trad"\nsets-only = true\nmin_set = 60\n')

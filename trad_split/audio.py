@@ -42,19 +42,35 @@ def duration(path: Path) -> float:
     return float(probe(path)["format"]["duration"])
 
 
-def recorded_at(path: Path) -> datetime:
-    """Recording time from the file's creation_time tag, else its modification time.
+def _parse_stamp(stamp: str) -> datetime | None:
+    try:
+        when = datetime.fromisoformat(stamp.strip().replace("Z", "+00:00"))
+    except ValueError:
+        return None
+    # Tags are UTC (or carry their own offset); naive ones are taken as local.
+    when = when.astimezone().replace(tzinfo=None)
+    return when if when.year >= 2000 else None  # ignore zeroed 1904/1970 stamps
 
-    Voice Memos stores creation_time in UTC; convert to local time.
+
+def recorded_at(path: Path) -> tuple[datetime, str]:
+    """When the memo was recorded, and where that came from.
+
+    Prefers the creation_time tag Voice Memos writes into the file, then the
+    file's creation date on disk (macOS keeps this through copies better than
+    the modified date), then the modified date.
     """
     try:
-        tags = probe(path)["format"].get("tags", {})
-        stamp = tags.get("creation_time") or tags.get("date")
-        if stamp:
-            return datetime.fromisoformat(stamp.replace("Z", "+00:00")).astimezone().replace(tzinfo=None)
-    except (subprocess.CalledProcessError, ValueError, KeyError):
+        info = probe(path)
+        for tags in [info["format"].get("tags", {})] + [s.get("tags", {}) for s in info.get("streams", [])]:
+            for key in ("creation_time", "com.apple.quicktime.creationdate", "date"):
+                if tags.get(key) and (when := _parse_stamp(tags[key])):
+                    return when, "file metadata"
+    except (subprocess.CalledProcessError, KeyError, json.JSONDecodeError):
         pass
-    return datetime.fromtimestamp(path.stat().st_mtime)
+    st = path.stat()
+    if getattr(st, "st_birthtime", 0):
+        return datetime.fromtimestamp(st.st_birthtime), "file created date"
+    return datetime.fromtimestamp(st.st_mtime), "file modified date"
 
 
 def output_ext(src: Path, reencode: bool) -> str:

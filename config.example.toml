@@ -17,7 +17,8 @@ reencode = false    # AAC 192k instead of stream copy
 # Detection
 min_set = 40.0          # seconds; shorter "sets" become chat
 min_chat = 4.0          # seconds; shorter gaps become part of the set
-pad = 1.5               # seconds added to each end of a set
+pad_start = 1.5         # seconds kept before each set
+pad_end = 3.5           # seconds kept after each set, keeps the applause
 switch_penalty = 12.0   # higher = fewer, longer segments
 bias = 0.0              # positive favours music, negative favours chat
 # device = "auto"       # auto, cpu, mps, cuda
