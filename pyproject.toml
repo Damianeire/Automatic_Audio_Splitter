@@ -1,0 +1,25 @@
+[build-system]
+requires = ["setuptools>=61"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "trad-split"
+version = "0.1.0"
+description = "Split recordings of trad sessions into sets of tunes and the chat in between."
+readme = "README.md"
+requires-python = ">=3.11"
+dependencies = [
+    "numpy",
+    "torch",
+    "panns-inference",
+    "matplotlib",
+]
+
+[project.optional-dependencies]
+dev = ["pytest"]
+
+[project.scripts]
+trad-split = "trad_split.cli:main"
+
+[tool.setuptools]
+packages = ["trad_split"]

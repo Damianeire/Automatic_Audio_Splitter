@@ -1,0 +1,23 @@
+# Copy to ~/.config/trad-split/config.toml. Every key is optional.
+
+# Where session folders go. Default: next to each memo.
+# output = "~/Obsidian/Trad Tunes/Sessions"
+
+# Obsidian vault root, so note links are vault-relative.
+# vault = "~/Obsidian/Trad Tunes"
+
+# Outputs
+audio = true        # export audio files
+sets_only = false   # true = skip chat files
+reaper = true       # Reaper project + regions CSV
+obsidian = false    # session note
+plot = false        # score plot PNG
+reencode = false    # AAC 192k instead of stream copy
+
+# Detection
+min_set = 40.0          # seconds; shorter "sets" become chat
+min_chat = 4.0          # seconds; shorter gaps become part of the set
+pad = 1.5               # seconds added to each end of a set
+switch_penalty = 12.0   # higher = fewer, longer segments
+bias = 0.0              # positive favours music, negative favours chat
+# device = "auto"       # auto, cpu, mps, cuda
