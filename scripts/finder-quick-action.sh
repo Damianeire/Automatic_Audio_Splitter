@@ -22,7 +22,23 @@ notify() {
               -e 'end run' "$1" "$2" 2>/dev/null
 }
 
+echo "--- $(date '+%Y-%m-%d %H:%M:%S')  called with $# file(s)" >> "$log"
+
+# If Automator is set to pass input "to stdin", the files arrive one per line there.
+if [ $# -eq 0 ] && [ ! -t 0 ]; then
+    items=()
+    while IFS= read -r line; do [ -n "$line" ] && items+=("$line"); done
+    [ ${#items[@]} -gt 0 ] && set -- "${items[@]}"
+    echo "    read $# file(s) from stdin" >> "$log"
+fi
+
+if [ $# -eq 0 ]; then
+    notify "Nothing to do" "No files were received. In Automator, set Pass input to: as arguments."
+    exit 1
+fi
+
 if [ ! -x "$trad_split" ]; then
+    echo "    cannot find $trad_split" >> "$log"
     notify "Not installed" "Cannot find $trad_split"
     exit 1
 fi
