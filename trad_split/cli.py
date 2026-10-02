@@ -81,7 +81,15 @@ def build_parser() -> argparse.ArgumentParser:
     exp.add_argument("--tune-format", choices=["mp3", "m4a"], help="tune file format (default mp3)")
     exp.add_argument("--all", action="store_true", help="also export sections still named 'Tune N'")
     exp.add_argument("--setup-obsidian", action="store_true",
-                     help="install the Export tunes command into the vault's Templater (Obsidian closed)")
+                     help="install the Export tunes and Add loops commands into the vault's Templater "
+                          "(Obsidian closed)")
+
+    lp = p.add_argument_group("add tune loops under audio files in any note")
+    lp.add_argument("--add-loops", type=Path, metavar="NOTE",
+                    help="detect tune changes in each audio file embedded in NOTE and add a loops "
+                         "block under it (embeds that already have one are left alone)")
+    lp.add_argument("--redo-loops", action="store_true",
+                    help="with --add-loops, replace existing loops blocks too (loses typed names)")
 
     src = p.add_argument_group("use edited boundaries instead of detecting")
     src.add_argument("--from-reaper", type=Path, metavar="RPP",
@@ -300,8 +308,8 @@ def main(argv: list[str] | None = None) -> int:
             except SetupError as e:
                 raise SystemExit(f"error: {e}")
             print("\n".join(f"- {d}" for d in done) if done else "Already set up; nothing changed.")
-            print("\nIn Obsidian, run it from the command palette (Templater: Insert Export tunes), "
-                  "or give it a key in Settings > Hotkeys (search 'Export tunes').")
+            print("\nIn Obsidian, run them from the command palette (Templater: Insert Export tunes, "
+                  "Templater: Insert Add loops), or give them keys in Settings > Hotkeys.")
             return 0
 
         if args.export_tunes:
@@ -311,6 +319,15 @@ def main(argv: list[str] | None = None) -> int:
                                   fmt=opts["tune_format"], include_unnamed=args.all, force=opts["force"])
             print(report.summary() if report.exported or report.existing or report.unnamed
                   or report.missing_files else "No loops blocks with tunes found in this note.")
+            return 0
+
+        if args.add_loops:
+            from .loops import add_loops
+
+            report = add_loops(args.add_loops, vault=opts["vault"], replace=args.redo_loops,
+                               min_tune=opts["min_tune"], sensitivity=opts["tune_sensitivity"],
+                               rescan=opts["rescan"])
+            print(report.summary())
             return 0
 
         if args.from_reaper:
