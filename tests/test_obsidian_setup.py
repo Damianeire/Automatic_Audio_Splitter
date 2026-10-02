@@ -26,13 +26,15 @@ def settings(v):
 
 def test_setup(vault):
     done = setup(vault, command="/x/trad-split")
-    assert len(done) == 5
+    assert len(done) == 8
     s = settings(vault)
     assert s["enable_system_commands"] is True and s["command_timeout"] == 120
-    assert s["templates_pairs"] == [["export_tunes", '"/x/trad-split" --export-tunes "$note"']]
-    assert s["enabled_templates_hotkeys"] == ["Meta/Templates/Export tunes.md"]
+    assert s["templates_pairs"] == [["export_tunes", '"/x/trad-split" --export-tunes "$note"'],
+                                    ["add_loops", '"/x/trad-split" --add-loops "$note"']]
+    assert s["enabled_templates_hotkeys"] == ["Meta/Templates/Export tunes.md", "Meta/Templates/Add loops.md"]
     assert s["trigger_on_file_creation"] is True and s["folder_templates"][0]["folder"] == "Tunes"
     assert "tp.user.export_tunes" in (vault / "Meta/Templates/Export tunes.md").read_text()
+    assert "tp.user.add_loops" in (vault / "Meta/Templates/Add loops.md").read_text()
     assert (vault / ".obsidian/plugins/templater-obsidian/data.json.bak").exists()
 
     assert setup(vault, command="/x/trad-split") == []  # idempotent
@@ -46,7 +48,8 @@ def test_keeps_other_functions_and_updates_path(vault):
     path.write_text(json.dumps(s))
     assert "updated the export_tunes function" in setup(vault, command="/new/trad-split")
     assert settings(vault)["templates_pairs"] == [
-        ["today", "date"], ["export_tunes", '"/new/trad-split" --export-tunes "$note"']]
+        ["today", "date"], ["export_tunes", '"/new/trad-split" --export-tunes "$note"'],
+        ["add_loops", '"/new/trad-split" --add-loops "$note"']]
 
 
 def test_empty_templates_folder_defaults(vault):
@@ -69,5 +72,6 @@ def test_refuses_without_templater_or_with_obsidian_open(vault, tmp_path, monkey
 
 def test_cli(vault, tmp_path, capsys):
     assert cli.main(["--setup-obsidian", "--vault", str(vault), "--config", str(tmp_path / "n.toml")]) == 0
-    assert "added the export_tunes function" in capsys.readouterr().out
+    out = capsys.readouterr().out
+    assert "added the export_tunes function" in out and "added the add_loops function" in out
     assert settings(vault)["templates_pairs"][0][1].endswith('trad-split" --export-tunes "$note"')
