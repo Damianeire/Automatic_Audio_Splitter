@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import re
 import sys
+import unicodedata
 from dataclasses import dataclass, field
 from pathlib import Path
 
@@ -115,7 +116,8 @@ def add_loops(note: Path, *, vault: Path | None = None, replace: bool = False,
             i += 1
             continue
         try:
-            file_link = path.resolve().relative_to(vault).as_posix()
+            # Spell it the way the note does (composed accents), not as macOS stores it.
+            file_link = unicodedata.normalize("NFC", path.resolve().relative_to(vault).as_posix())
         except ValueError:
             file_link = link
         segment = detect(path, min_tune=min_tune, sensitivity=sensitivity, rescan=rescan)

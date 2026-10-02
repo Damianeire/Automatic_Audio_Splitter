@@ -13,7 +13,7 @@ pytestmark = pytest.mark.skipif(not shutil.which("ffmpeg"), reason="needs ffmpeg
 def write_set(path, *tunes_):
     audio = set_of(*tunes_)
     subprocess.run(["ffmpeg", "-v", "error", "-f", "f32le", "-ar", str(SR), "-ac", "1", "-i", "-",
-                    "-c:a", "aac", str(path)], input=audio.tobytes(), check=True)
+                    "-c:a", "libmp3lame" if path.suffix == ".mp3" else "aac", str(path)], input=audio.tobytes(), check=True)
     return len(tunes_[0]) / SR  # where the second tune starts
 
 
@@ -71,3 +71,22 @@ def test_note_without_audio(tmp_path, capsys):
     assert cli.main(["--add-loops", str(note), "--config", str(tmp_path / "none.toml")]) == 0
     assert "No embedded audio files" in capsys.readouterr().out
     assert note.read_text() == "# nothing here\n![[picture.png]]\n"
+
+
+def test_finds_file_whose_accents_are_stored_differently(tmp_path, monkeypatch):
+    import unicodedata
+
+    monkeypatch.setattr("trad_split.classify.CACHE_DIR", tmp_path / "cache")
+    v = tmp_path / "Vault"
+    (v / ".obsidian").mkdir(parents=True)
+    name = "Séamus McGuire, John Lee - Leitrim Clog Dance.mp3"
+    folder = v / "Audio" / "Recordings"
+    folder.mkdir(parents=True)
+    # macOS often stores the decomposed form; the note has the composed one.
+    write_set(folder / unicodedata.normalize("NFD", name), tune(62, seed=1))
+    note = v / "Tunes" / "Leitrim Clog.md"
+    note.parent.mkdir()
+    note.write_text(f"# Leitrim Clog\n\n![[{unicodedata.normalize('NFC', name)}]]\n")
+    report = add_loops(note)
+    assert report.missing == [] and len(report.added) == 1
+    assert f"file: Audio/Recordings/{unicodedata.normalize('NFC', name)}\n" in note.read_text()
