@@ -31,6 +31,7 @@ DEFAULTS = {
     "pad": None,  # shortcut for pad_start and pad_end together
     "tunes_folder": None,  # where --export-tunes puts files; default: Obsidian's attachment folder
     "tune_format": "mp3",
+    "tune_tail": 2.0,  # seconds a tune's loop and export run past the change into the next one
     "tunes": True,  # mark tune changes inside sets
     "min_tune": 60.0,
     "tune_sensitivity": 1.0,
@@ -284,7 +285,8 @@ def process(memo: Path, opts: dict, *, edited: list[Segment] | None = None,
         if opts["force"] or not note.exists():
             note.write_text(obsidian_note(
                 title=title, source=memo, recorded=recorded, length=length,
-                segments=segments, files=files, link_root=opts["vault"]), encoding="utf-8")
+                segments=segments, files=files, link_root=opts["vault"], tail=opts["tune_tail"]),
+                encoding="utf-8")
         else:
             print(f"  kept existing {note.name} (use --force to replace)", file=sys.stderr)
 
@@ -316,7 +318,8 @@ def main(argv: list[str] | None = None) -> int:
             from .export import export_tunes
 
             report = export_tunes(args.export_tunes, vault=opts["vault"], folder=opts["tunes_folder"],
-                                  fmt=opts["tune_format"], include_unnamed=args.all, force=opts["force"])
+                                  fmt=opts["tune_format"], include_unnamed=args.all, force=opts["force"],
+                                  tail=opts["tune_tail"])
             print(report.summary() if report.exported or report.existing or report.unnamed
                   or report.missing_files else "No loops blocks with tunes found in this note.")
             return 0
@@ -326,7 +329,7 @@ def main(argv: list[str] | None = None) -> int:
 
             report = add_loops(args.add_loops, vault=opts["vault"], replace=args.redo_loops,
                                min_tune=opts["min_tune"], sensitivity=opts["tune_sensitivity"],
-                               rescan=opts["rescan"])
+                               rescan=opts["rescan"], tail=opts["tune_tail"])
             print(report.summary())
             return 0
 

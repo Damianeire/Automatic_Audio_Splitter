@@ -34,7 +34,7 @@ Sets are not split at tune changes, but the changes are marked:
   ````
   ```loops
   file: Sessions/20251122 The Clock Tavern 22/02 Set 1.m4a
-  0:00 - 2:18 | Tune 1
+  0:00 - 2:20 | Tune 1
   2:18 - 4:34.3 | Tune 2 ?
   ```
   ````
@@ -44,6 +44,8 @@ Sets are not split at tune changes, but the changes are marked:
 How it works: a tune is played round two or three times, so after its first round the music keeps matching what was heard a minute earlier. A new tune breaks that pattern. This means it works even when two tunes share a key and rhythm. It can miss a change if a tune is played only once. A name ending in `?` marks a weak detection. Weak ones are kept rather than dropped: in real sessions most turn out to be real changes, often into a tune played loosely, so check them by ear and delete any that aren't (`--tune-sensitivity 0.6` leaves out the weakest).
 
 Correcting in Reaper: move, delete or add markers, and rename them with the tune names. A marker at the very start of a set names the first tune. Then re-cut with `--from-reaper`, and the names carry through to the chapters and the note.
+
+Changes are found a second or two early. That makes a good lead-in for the next tune, but would clip the end of the one before, so each tune's section runs 2 s past the change into the next (Tune 1 above ends at 2:20, Tune 2 starts at 2:18). Exported tunes get the same 2 s, including from blocks written before this was added. Set `tune_tail` in the config file to change it; `0` ends each tune exactly at the change.
 
 Settings: `--min-tune` (default 60 s) and `--tune-sensitivity` (default 1; higher finds more). Use `--no-tunes` to turn detection off. With `--plot`, detected changes show as dashed lines.
 
@@ -55,7 +57,7 @@ The loops blocks don't have to come from a session split. `--add-loops` works on
 ![[Ballina reels.m4a]]
 ```loops
 file: Sound Files/Ballina reels.m4a
-0:00 - 2:18 | Tune 1
+0:00 - 2:20 | Tune 1
 2:18 - 4:34.3 | Tune 2 ?
 ```
 ````

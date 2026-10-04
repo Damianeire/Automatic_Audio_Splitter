@@ -4,6 +4,12 @@ Reads the ```loops blocks trad-split writes (and you correct) in a session
 note, cuts every named section out of its set file as
 "yyyymmdd <Tune Name>.mp3" in the vault's sound files folder, and links the
 new file from the vault note of the same name.
+
+Detected tune changes land a second or two early (the new tune's start is
+judged on a window reaching into it), which is a fine lead-in for the next
+tune but clips the end of this one. New loops blocks already run each tune
+`tail` seconds on; a tune that ends exactly where the next starts (an older
+block) is cut `tail` seconds past the change here.
 """
 
 from __future__ import annotations
@@ -17,6 +23,7 @@ from pathlib import Path
 
 from . import audio
 from .outputs import loop_time, parse_loop_time
+from .tunes import TAIL
 
 DEFAULT_NAME = re.compile(r"^Tune \d+$")
 _BLOCK = re.compile(r"^```loops[ \t]*\n(.*?)^```", re.S | re.M)
@@ -174,7 +181,8 @@ def add_recording_link(tune_note: Path, line: str, marker: str) -> bool:
 
 
 def export_tunes(note: Path, *, vault: Path | None = None, folder: str | Path | None = None,
-                 fmt: str = "mp3", include_unnamed: bool = False, force: bool = False) -> Report:
+                 fmt: str = "mp3", include_unnamed: bool = False, force: bool = False,
+                 tail: float = TAIL) -> Report:
     note = note.expanduser().resolve()
     vault = find_vault(note, vault)
     sections, date = parse_note(note, vault)
@@ -188,6 +196,7 @@ def export_tunes(note: Path, *, vault: Path | None = None, folder: str | Path | 
     session = note.stem
     seen: dict[str, int] = {}
     durations: dict[Path, float] = {}
+    starts = {(s.set_file, s.start) for s in sections}
 
     for sec in sections:
         name = re.sub(r"\s*\?$", "", sec.name).strip()
@@ -200,6 +209,8 @@ def export_tunes(note: Path, *, vault: Path | None = None, folder: str | Path | 
         if sec.set_file not in durations:
             durations[sec.set_file] = audio.duration(sec.set_file)
         end = sec.end if sec.end is not None else durations[sec.set_file]
+        if (sec.set_file, end) in starts:
+            end = min(end + tail, durations[sec.set_file])
 
         prefix = date or audio.recorded_at(sec.set_file)[0].strftime("%Y%m%d")
         seen[name] = seen.get(name, 0) + 1

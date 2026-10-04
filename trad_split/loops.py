@@ -18,6 +18,7 @@ from pathlib import Path
 from . import audio
 from .export import _resolve, find_vault
 from .outputs import loops_block
+from .tunes import TAIL
 from .segment import SET, Mark, Segment
 
 _EMBED = re.compile(r"!\[\[([^\]|#]+)(?:[#|][^\]]*)?\]\]")
@@ -84,7 +85,8 @@ def detect(path: Path, *, min_tune: float = 60.0, sensitivity: float = 1.0,
 
 
 def add_loops(note: Path, *, vault: Path | None = None, replace: bool = False,
-              min_tune: float = 60.0, sensitivity: float = 1.0, rescan: bool = False) -> LoopsReport:
+              min_tune: float = 60.0, sensitivity: float = 1.0, rescan: bool = False,
+              tail: float = TAIL) -> LoopsReport:
     """Insert a loops block under each embedded audio file in note that lacks one.
 
     replace=True redoes existing blocks too, which loses any names typed into them.
@@ -121,7 +123,7 @@ def add_loops(note: Path, *, vault: Path | None = None, replace: bool = False,
         except ValueError:
             file_link = link
         segment = detect(path, min_tune=min_tune, sensitivity=sensitivity, rescan=rescan)
-        out += loops_block(file_link, segment)
+        out += loops_block(file_link, segment, tail)
         n = len(segment.tunes())
         report.added.append(f"{path.name} ({n} tune{'s' if n != 1 else ''})")
         # Skip the old block (and the blank lines before it) when replacing.

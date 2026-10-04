@@ -8,6 +8,7 @@ from pathlib import Path
 import numpy as np
 
 from .segment import SET, Segment
+from .tunes import TAIL
 
 
 def clock(seconds: float) -> str:
@@ -33,10 +34,16 @@ def parse_loop_time(text: str) -> float:
     return total
 
 
-def loops_block(file_link: str, segment: Segment) -> list[str]:
-    """Tune sections for the audio-loop-player plugin, times relative to the set file."""
+def loops_block(file_link: str, segment: Segment, tail: float = TAIL) -> list[str]:
+    """Tune sections for the audio-loop-player plugin, times relative to the set file.
+
+    Each tune but the last runs `tail` seconds past the change into the next,
+    since changes are found a little early and would clip its last notes.
+    """
     lines = ["```loops", f"file: {file_link}"]
     for a, b, name in segment.tunes():
+        if b < segment.end:
+            b = min(b + tail, segment.end)
         lines.append(f"{loop_time(a - segment.start)} - {loop_time(b - segment.start)} | {name}")
     return lines + ["```"]
 
@@ -47,7 +54,7 @@ def _yaml_str(s: str) -> str:
 
 def obsidian_note(*, title: str, source: Path, recorded: datetime, length: float,
                   segments: list[Segment], files: dict[int, Path],
-                  link_root: Path | None) -> str:
+                  link_root: Path | None, tail: float = TAIL) -> str:
     """Markdown with YAML frontmatter and one section per set.
 
     files maps segment index to the exported audio file. Links are relative to
@@ -86,7 +93,7 @@ def obsidian_note(*, title: str, source: Path, recorded: datetime, length: float
             "",
         ]
         if i in files:
-            lines += [f"![[{link(files[i])}]]", *loops_block(link(files[i]), s), ""]
+            lines += [f"![[{link(files[i])}]]", *loops_block(link(files[i]), s, tail), ""]
         elif len(s.tunes()) > 1:
             lines += [f"- {clock(a)} {name}" for a, _, name in s.tunes()] + [""]
         lines += ["tunes:: ", "notes:: ", ""]
