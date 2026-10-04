@@ -80,7 +80,8 @@ def test_export(vault):
         "20251122 The Kesh.mp3", "20251122 The Mason's Apron.mp3",
         "20251122 The Silver Spear (2).mp3", "20251122 The Silver Spear.mp3"]
     assert report.unnamed == 1
-    assert abs(duration(sounds / "20251122 The Silver Spear.mp3") - 40.5) < 0.2
+    assert abs(duration(sounds / "20251122 The Silver Spear.mp3") - 42.5) < 0.2  # 2 s into the next tune
+    assert abs(duration(sounds / "20251122 The Mason's Apron.mp3") - 40) < 0.2  # no next tune: file end
     assert abs(duration(sounds / "20251122 The Silver Spear (2).mp3") - 45) < 0.2  # to end of file
     tags = probe(sounds / "20251122 The Kesh.mp3")["format"]["tags"]
     assert tags["title"] == "The Kesh" and tags["album"] == "20251122 The Clock Tavern 22"

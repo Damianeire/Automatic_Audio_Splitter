@@ -29,6 +29,7 @@ HOP = 0.5  # seconds per feature frame, same as the music/chat scores
 _STFT_HOP = 512
 WEAK = 0.15  # weakest change kept, at sensitivity 1
 CONFIDENT = 0.4  # weaker changes are marked as guesses
+TAIL = 2.0  # changes are found this early, so a tune's section runs this far past its change
 
 
 @dataclass

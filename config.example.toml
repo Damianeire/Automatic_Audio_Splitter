@@ -28,5 +28,6 @@ tune_format = "mp3"              # mp3 or m4a
 # Tune changes within sets
 tunes = true            # mark where tunes change (chapters, note sections, Reaper markers)
 min_tune = 60.0         # seconds; shortest tune
+tune_tail = 2.0         # seconds each tune's loop and export run past the change (found a little early)
 tune_sensitivity = 1.0  # higher marks more changes, lower fewer
 # device = "auto"       # auto, cpu, mps, cuda

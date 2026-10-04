@@ -6,6 +6,7 @@ import pytest
 from synth import SR, set_of, tune
 from trad_split import cli
 from trad_split.loops import add_loops
+from trad_split.outputs import parse_loop_time
 
 pytestmark = pytest.mark.skipif(not shutil.which("ffmpeg"), reason="needs ffmpeg")
 
@@ -40,11 +41,13 @@ def test_adds_block_under_new_embeds_only(vault):
     assert head == "# Practice\n\n![[Ballina reels.m4a]]\n"
     block, after = rest.split("```\n", 1)
     first, second = block.splitlines()
-    t = first.split(" - ")[1].split(" | ")[0]
+    t = second.split(" - ")[0]
     m, s = t.split(":")
     assert abs(int(m) * 60 + float(s) - change) <= 5
     assert first.startswith("0:00 - ") and first.endswith("| Tune 1")
-    assert second.startswith(f"{t} - ") and "| Tune 2" in second
+    assert "| Tune 2" in second
+    end = first.split(" - ")[1].split(" | ")[0]  # first tune runs 2 s past the change
+    assert abs(parse_loop_time(end) - parse_loop_time(t) - 2) < 0.05
     assert after.startswith("Some notes.\n")
     assert "0:00 - 1:00 | The Kesh" in text  # existing block kept
     assert text.count("```loops") == 2  # nothing added inside the code block
