@@ -36,6 +36,20 @@ NUMBERS = [
     ("tune_tail", "Run past tune change (s)", 0, 10, 0.5, 1),
 ]
 
+# Hover help for the Outputs checkboxes, for people new to the tool.
+TIPS = {
+    "audio": "An audio file for each set (and each stretch of chat between sets), cut from the recording.",
+    "sets_only": "Only cut the sets. The chat between them is left out.",
+    "reaper": "A Reaper project with a region per set, for fixing the splits by hand. "
+              "Re-cut afterwards by adding the .RPP to this list.",
+    "plot": "A picture of the music/chat scores, for seeing why a set was split where it was.",
+    "tunes": "Find where one tune changes to the next inside each set, and mark it in the files and note.",
+    "reencode": "Convert the audio to AAC instead of copying it as it is. Slower; only needed "
+                "if a player has trouble with the files.",
+    "force": "Replace a Reaper project or note that is already there. Without this they are kept.",
+    "rescan": "Analyse the recording again instead of reusing the saved analysis.",
+}
+
 TUNE_FORMATS = ["mp3", "m4a"]
 
 # Per-run switches that are never saved as defaults.
@@ -99,6 +113,28 @@ def build_argv(opts: dict, item: Path, *, include_unnamed: bool = False) -> list
     if opts.get("model"):
         argv.append(f"--model={opts['model']}")
     return argv
+
+
+def where_hint(output: Path | None, vault: Path | None, obsidian: bool) -> str:
+    """A warning for the folder settings, or "" when they make sense together."""
+    if not obsidian:
+        return ""
+    if vault is None:
+        return "Choose your vault so the links in the note work."
+    vault = Path(vault).expanduser()
+    if not (vault / ".obsidian").is_dir():
+        return ("This folder is not an Obsidian vault. Choose the top folder of your vault "
+                "(the one Obsidian opens, which holds a hidden .obsidian folder).")
+    if output is None:
+        return ("Session folders will go next to each recording. Unless the recordings are in "
+                "your vault, Obsidian will not see the notes: tick Put session folders in, "
+                "and choose a folder inside your vault.")
+    try:
+        Path(output).expanduser().resolve().relative_to(vault.resolve())
+    except ValueError:
+        return ("The session folders are not inside your vault, so Obsidian will not see the "
+                "notes. Choose a folder inside your vault, for example a Sessions folder.")
+    return ""
 
 
 def session_dirs(output: str) -> list[Path]:

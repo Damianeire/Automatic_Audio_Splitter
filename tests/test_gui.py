@@ -6,6 +6,7 @@ import pytest
 from trad_split import cli
 from trad_split.gui_options import (
     NOTE, REAPER, MEMO, ProgressLog, build_argv, initial_options, kind, session_dirs, update_config,
+    where_hint,
 )
 
 
@@ -61,6 +62,17 @@ def test_note_item(opts):
     assert args.export_tunes == Path("/v/Sessions/20251122 X.md")
     assert args.tune_format == "m4a" and args.all and args.vault == Path("/v")
     assert args.tune_tail == 0.0  # the export runs tunes past the change by the window's amount
+
+
+def test_where_hint(tmp_path):
+    vault = tmp_path / "Vault"
+    (vault / ".obsidian").mkdir(parents=True)
+    assert where_hint(None, None, obsidian=False) == ""  # no note, nothing to check
+    assert "Choose your vault" in where_hint(vault / "Sessions", None, obsidian=True)
+    assert "not an Obsidian vault" in where_hint(vault / "Sessions", tmp_path, obsidian=True)
+    assert "next to each recording" in where_hint(None, vault, obsidian=True)
+    assert "not inside your vault" in where_hint(tmp_path / "Out", vault, obsidian=True)
+    assert where_hint(vault / "Sessions", vault, obsidian=True) == ""
 
 
 def test_session_dirs():
@@ -154,5 +166,17 @@ def test_window_builds(tmp_path, opts, monkeypatch):
     got = win.current_options()
     assert got["obsidian"] is True and got["bias"] == -1.0
     assert win.run_btn.isEnabled() and not win.stop_btn.isEnabled()
+
+    vault = tmp_path / "Vault"
+    (vault / ".obsidian").mkdir(parents=True)
+    win.vault_edit.setText(str(vault))
+    win.output_check.setChecked(True)
+    win.output_edit.setText(str(tmp_path / "elsewhere"))
+    assert "not inside your vault" in win.where_warning.text()
+    win.output_edit.setText(str(vault / "Sessions"))
+    assert win.where_warning.text() == ""
+    assert win.current_options()["output"] == vault / "Sessions"
+    win.output_check.setChecked(False)  # next to each recording; the typed folder is kept
+    assert win.current_options()["output"] is None and win.output_edit.text()
     win.close()
     app.processEvents()

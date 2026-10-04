@@ -23,8 +23,8 @@ from PySide6.QtWidgets import (
 from . import cli
 from .audio import AUDIO_EXTS
 from .gui_options import (
-    BOOLS, DESCRIPTIONS, MEMO, NUMBERS, TUNE_FORMATS, ProgressLog, build_argv, initial_options,
-    kind, save_config, session_dirs,
+    BOOLS, DESCRIPTIONS, MEMO, NUMBERS, TIPS, TUNE_FORMATS, ProgressLog, build_argv,
+    initial_options, kind, save_config, session_dirs, where_hint,
 )
 
 APP_NAME = "Trad Split"
@@ -49,6 +49,7 @@ class Window(QMainWindow):
         self.log_state = ProgressLog()
         self.partial_shown = False
         self.finished_dirs: list[Path] = []
+        self.checks: dict[str, QCheckBox] = {}
 
         self.setWindowTitle(APP_NAME)
         self.setAcceptDrops(True)
@@ -113,25 +114,81 @@ class Window(QMainWindow):
         row.addWidget(choose)
         return w, edit
 
+    @staticmethod
+    def _note(text: str) -> QLabel:
+        label = QLabel(text)
+        label.setWordWrap(True)
+        label.setStyleSheet("color: palette(placeholder-text);")
+        label.setSizePolicy(QSizePolicy.Preferred, QSizePolicy.Minimum)  # never squashed
+        return label
+
     def _where_box(self) -> QGroupBox:
-        box = QGroupBox("Where")
-        form = QFormLayout(box)
-        row, self.output_edit = self._path_row(self.opts["output"], "Next to each memo",
-                                               "Folder for session folders")
-        form.addRow("Session folders:", row)
-        row, self.vault_edit = self._path_row(self.opts["vault"], "None", "Obsidian vault")
-        form.addRow("Obsidian vault:", row)
+        box = QGroupBox("Where things go")
+        v = QVBoxLayout(box)
+
+        self.output_check = QCheckBox("Put session folders in:")
+        self.output_check.setChecked(self.opts["output"] is not None)
+        row, self.output_edit = self._path_row(self.opts["output"], "Choose a folder",
+                                               "Folder to put session folders in")
+        line = QHBoxLayout()
+        line.addWidget(self.output_check)
+        line.addWidget(row, 1)
+        v.addLayout(line)
+        v.addWidget(self._note(
+            "Each recording gets its own folder here, with an audio file for each set (and the "
+            "note and Reaper project, if you make them). Untick to put it next to the recording."))
+
+        obsidian = QCheckBox("Make an Obsidian note. My vault:")
+        obsidian.setChecked(bool(self.opts["obsidian"]))
+        self.checks["obsidian"] = obsidian
+        row, self.vault_edit = self._path_row(self.opts["vault"], "Choose your vault folder",
+                                              "Obsidian vault")
+        line = QHBoxLayout()
+        line.addWidget(obsidian)
+        line.addWidget(row, 1)
+        v.addLayout(line)
+        v.addWidget(self._note(
+            "A note with a player for each set, saved in the session folder. Your vault is the "
+            "folder you open in Obsidian. For Obsidian to show the note, put session folders "
+            "inside your vault, for example in a Sessions folder."))
+
+        self.where_warning = QLabel()
+        self.where_warning.setWordWrap(True)
+        self.where_warning.setStyleSheet("color: #c0392b;")
+        self.where_warning.setSizePolicy(QSizePolicy.Preferred, QSizePolicy.Minimum)
+        v.addWidget(self.where_warning)
+
+        for check, field in ((self.output_check, self.output_edit), (obsidian, self.vault_edit)):
+            check.toggled.connect(field.parentWidget().setEnabled)
+            field.parentWidget().setEnabled(check.isChecked())
+            check.toggled.connect(self._update_where_warning)
+            field.textChanged.connect(self._update_where_warning)
+        self._update_where_warning()
         return box
 
+    def _folders(self) -> dict:
+        """The Where settings: output (None = next to each recording), vault, obsidian."""
+        def path(edit: QLineEdit) -> Path | None:
+            text = edit.text().strip()
+            return Path(text).expanduser() if text else None
+        return {"output": path(self.output_edit) if self.output_check.isChecked() else None,
+                "vault": path(self.vault_edit), "obsidian": self.checks["obsidian"].isChecked()}
+
+    def _update_where_warning(self) -> None:
+        hint = where_hint(**self._folders())
+        self.where_warning.setText(hint)
+        self.where_warning.setVisible(bool(hint))
+
     def _outputs_box(self) -> QGroupBox:
-        box = QGroupBox("Outputs")
+        box = QGroupBox("What to make")
         grid = QGridLayout(box)
-        self.checks: dict[str, QCheckBox] = {}
-        for n, (key, label) in enumerate(BOOLS):
+        shown = [(key, label) for key, label in BOOLS if key != "obsidian"]  # under Where
+        for n, (key, label) in enumerate(shown):
             check = QCheckBox(label)
             check.setChecked(bool(self.opts[key]))
+            check.setToolTip(TIPS.get(key, ""))
             self.checks[key] = check
-            grid.addWidget(check, n % 5, n // 5)
+            grid.addWidget(check, n % 4, n // 4)
         self.checks["audio"].toggled.connect(self.checks["sets_only"].setEnabled)
         self.checks["sets_only"].setEnabled(self.checks["audio"].isChecked())
         return box
@@ -267,9 +324,7 @@ class Window(QMainWindow):
             opts[key] = check.isChecked()
         for key, spin in self.numbers.items():
             opts[key] = spin.value()
-        for key, edit in (("output", self.output_edit), ("vault", self.vault_edit)):
-            text = edit.text().strip()
-            opts[key] = Path(text).expanduser() if text else None
+        opts.update(self._folders())
         opts["tune_format"] = self.tune_format.currentText()
         return opts
 

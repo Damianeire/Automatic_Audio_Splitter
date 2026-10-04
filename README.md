@@ -169,6 +169,7 @@ Then drag `Trad Split.app` from `~/Applications` to the Dock. Run `scripts/make-
 To use it:
 
 - Add files with Add Files..., by dragging them into the list, or by dropping them on the app's Dock icon. You can do this while a run is going.
+- Where things go: tick Put session folders in and choose a folder. Each recording gets its own session folder there, holding an audio file per set, and the note and Reaper project if you make them; untick it to put each session folder next to its recording. To make an Obsidian note, tick Make an Obsidian note and choose your vault (the folder you open in Obsidian). The note is saved in the session folder, so Obsidian only shows it if the session folders are inside your vault; the window warns you if they are not. Hover over the other options for what they do.
 - Each item is handled the same way as in the Finder Quick Action: a memo or folder of memos is split, a `.RPP` is re-cut from your Reaper edits, and a session note (`.md`) has its named tunes exported.
 - The window opens with the settings from your config file. Changes apply to the next run only, unless you press Save as Defaults. That writes them to `~/.config/trad-split/config.toml` and keeps any comments in the file. Overwrite and Rescan are never saved, because they are meant for one run at a time.
 - Open Session Folder opens the folders from the last run. Stop ends the current run and skips the rest of the list.
