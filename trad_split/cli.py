@@ -114,6 +114,8 @@ def build_parser() -> argparse.ArgumentParser:
     tun.add_argument("--min-tune", type=float, help="shortest tune in seconds (default 60)")
     tun.add_argument("--tune-sensitivity", type=float,
                      help="higher marks more changes, lower fewer (default 1.0)")
+    tun.add_argument("--tune-tail", type=float,
+                     help="seconds each tune's loop and export run past the change (default 2)")
     det.add_argument("--device", help="torch device: auto, cpu, mps, cuda")
     det.add_argument("--model", type=Path, help="path to Cnn14_DecisionLevelMax checkpoint")
     return p

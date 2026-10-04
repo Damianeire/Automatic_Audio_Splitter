@@ -1,0 +1,226 @@
+"""The parts of the trad-split window that don't need Qt: which options it shows,
+how they become a trad-split command, and saving them back to the config file."""
+
+from __future__ import annotations
+
+import json
+import re
+import tomllib
+from pathlib import Path
+
+from . import cli
+
+# (option, checkbox label)
+BOOLS = [
+    ("audio", "Audio files"),
+    ("sets_only", "Sets only, skip chat"),
+    ("reaper", "Reaper project and CSV"),
+    ("obsidian", "Obsidian note"),
+    ("plot", "Score plot"),
+    ("tunes", "Mark tune changes"),
+    ("reencode", "Re-encode (AAC 192k)"),
+    ("force", "Overwrite existing project and note"),
+    ("rescan", "Rescan, ignore cached scores"),
+]
+
+# (option, label, minimum, maximum, step, decimals)
+NUMBERS = [
+    ("min_set", "Shortest set (s)", 0, 600, 5, 1),
+    ("min_chat", "Shortest chat (s)", 0, 120, 1, 1),
+    ("pad_start", "Keep before set (s)", 0, 30, 0.5, 1),
+    ("pad_end", "Keep after set (s)", 0, 30, 0.5, 1),
+    ("switch_penalty", "Switch penalty", 0, 100, 1, 1),
+    ("bias", "Bias (+ music, - chat)", -5, 5, 0.25, 2),
+    ("min_tune", "Shortest tune (s)", 10, 600, 5, 1),
+    ("tune_sensitivity", "Tune sensitivity", 0.1, 5, 0.1, 2),
+    ("tune_tail", "Run past tune change (s)", 0, 10, 0.5, 1),
+]
+
+# Hover help for the Outputs checkboxes, for people new to the tool.
+TIPS = {
+    "audio": "An audio file for each set (and each stretch of chat between sets), cut from the recording.",
+    "sets_only": "Only cut the sets. The chat between them is left out.",
+    "reaper": "A Reaper project with a region per set, for fixing the splits by hand. "
+              "Re-cut afterwards by adding the .RPP to this list.",
+    "plot": "A picture of the music/chat scores, for seeing why a set was split where it was.",
+    "tunes": "Find where one tune changes to the next inside each set, and mark it in the files and note.",
+    "reencode": "Convert the audio to AAC instead of copying it as it is. Slower; only needed "
+                "if a player has trouble with the files.",
+    "force": "Replace a Reaper project or note that is already there. Without this they are kept.",
+    "rescan": "Analyse the recording again instead of reusing the saved analysis.",
+}
+
+TUNE_FORMATS = ["mp3", "m4a"]
+
+# Per-run switches that are never saved as defaults.
+PER_RUN = {"force", "rescan"}
+SAVED = [k for k, _ in BOOLS if k not in PER_RUN] + [k for k, *_ in NUMBERS] + [
+    "output", "vault", "tune_format"]
+
+MEMO, REAPER, NOTE = "memo", "reaper", "note"
+DESCRIPTIONS = {MEMO: "split", REAPER: "re-cut from Reaper", NOTE: "export tunes"}
+
+
+def initial_options(config: Path = cli.CONFIG_PATH) -> dict:
+    """Defaults with the config file on top, as a plain trad-split run would see them."""
+    return cli.resolve_options(cli.build_parser().parse_args(["--config", str(config)]))
+
+
+def kind(path: Path) -> str:
+    """What running this item means, as in scripts/finder-quick-action.sh."""
+    suffix = Path(path).suffix.lower()
+    if suffix == ".rpp":
+        return REAPER
+    if suffix == ".md":
+        return NOTE
+    return MEMO
+
+
+def _flag(key: str) -> str:
+    return key.replace("_", "-")
+
+
+def build_argv(opts: dict, item: Path, *, include_unnamed: bool = False) -> list[str]:
+    """trad-split arguments for one list item.
+
+    Every option shown in the window is passed explicitly, so the run does what
+    the window shows whatever the config file says.
+    """
+    item = Path(item)
+    what = kind(item)
+    if what == NOTE:
+        argv = ["--export-tunes", str(item), f"--tune-format={opts['tune_format']}",
+                f"--tune-tail={float(opts['tune_tail']):g}",
+                "--force" if opts["force"] else "--no-force"]
+        if opts.get("tunes_folder"):
+            argv.append(f"--tunes-folder={opts['tunes_folder']}")
+        if opts.get("vault"):
+            argv.append(f"--vault={opts['vault']}")
+        if include_unnamed:
+            argv.append("--all")
+        return argv
+
+    argv = ["--from-reaper", str(item)] if what == REAPER else [str(item)]
+    argv += [("--" if opts[key] else "--no-") + _flag(key) for key, _ in BOOLS]
+    # '=' so a negative bias is not mistaken for a flag.
+    argv += [f"--{_flag(key)}={float(opts[key]):g}" for key, *_ in NUMBERS]
+    if opts.get("output") and what == MEMO:
+        argv.append(f"--output={opts['output']}")
+    if opts.get("vault"):
+        argv.append(f"--vault={opts['vault']}")
+    if opts.get("device") and opts["device"] != "auto":
+        argv.append(f"--device={opts['device']}")
+    if opts.get("model"):
+        argv.append(f"--model={opts['model']}")
+    return argv
+
+
+def where_hint(output: Path | None, vault: Path | None, obsidian: bool) -> str:
+    """A warning for the folder settings, or "" when they make sense together."""
+    if not obsidian:
+        return ""
+    if vault is None:
+        return "Choose your vault so the links in the note work."
+    vault = Path(vault).expanduser()
+    if not (vault / ".obsidian").is_dir():
+        return ("This folder is not an Obsidian vault. Choose the top folder of your vault "
+                "(the one Obsidian opens, which holds a hidden .obsidian folder).")
+    if output is None:
+        return ("Session folders will go next to each recording. Unless the recordings are in "
+                "your vault, Obsidian will not see the notes: tick Put session folders in, "
+                "and choose a folder inside your vault.")
+    try:
+        Path(output).expanduser().resolve().relative_to(vault.resolve())
+    except ValueError:
+        return ("The session folders are not inside your vault, so Obsidian will not see the "
+                "notes. Choose a folder inside your vault, for example a Sessions folder.")
+    return ""
+
+
+def session_dirs(output: str) -> list[Path]:
+    """Session folders a run reported with its '  -> <dir>' lines."""
+    return [Path(m) for m in re.findall(r"^  -> (.+?)\s*$", output, re.MULTILINE)]
+
+
+class ProgressLog:
+    """Turns process output into log lines.
+
+    Progress lines start with a carriage return and replace each other, so they
+    are held as the unfinished last line until a newline commits them.
+    """
+
+    def __init__(self) -> None:
+        self.partial = ""
+
+    def feed(self, text: str) -> list[str]:
+        """Add output; return the lines it completed. self.partial is the line in progress."""
+        done = []
+        for piece in re.split(r"(\r|\n)", text):
+            if piece == "\n":
+                done.append(self.partial)
+                self.partial = ""
+            elif piece == "\r":
+                self.partial = ""
+            else:
+                self.partial += piece
+        return done
+
+
+def _toml_value(value) -> str:
+    if isinstance(value, bool):
+        return "true" if value else "false"
+    if isinstance(value, (int, float)):
+        return repr(float(value))
+    if isinstance(value, Path):
+        home = str(Path.home())
+        value = str(value)
+        if value == home or value.startswith(home + "/"):
+            value = "~" + value[len(home):]
+    return json.dumps(str(value))
+
+
+# The value is a "basic" string, a 'literal' string (either may hold spaces) or a bare word.
+_ASSIGNMENT = re.compile(r'''^(\s*)([A-Za-z0-9_-]+)(\s*=\s*)("(?:[^"\\]|\\.)*"|'[^']*'|[^#\s]+)(.*)$''')
+
+
+def update_config(text: str, opts: dict) -> str:
+    """Write the saved options into config file text, keeping its comments.
+
+    Keys already in the file are updated in place. Other keys are added only
+    when they differ from the built-in default. A cleared folder comments its
+    line out.
+    """
+    lines = text.splitlines()
+    top = next((i for i, line in enumerate(lines) if line.lstrip().startswith("[")), len(lines))
+    seen = set()
+    for i, line in enumerate(lines[:top]):  # trad-split only reads top-level keys
+        m = _ASSIGNMENT.match(line)
+        key = m.group(2).replace("-", "_") if m else None
+        if key not in SAVED or key in seen:
+            continue
+        seen.add(key)
+        if opts.get(key) is None:
+            lines[i] = f"# {line.lstrip()}"
+        else:
+            lines[i] = f"{m.group(1)}{m.group(2)}{m.group(3)}{_toml_value(opts[key])}{m.group(5)}"
+    extra = [f"{key} = {_toml_value(opts[key])}" for key in SAVED
+             if key not in seen and opts.get(key) is not None and opts[key] != cli.DEFAULTS[key]]
+    if extra:
+        head, tail = lines[:top], lines[top:]
+        while head and not head[-1].strip():
+            head.pop()
+        lines = head + ([""] if head else []) + extra + ([""] if tail else []) + tail
+    return "\n".join(lines) + "\n"
+
+
+def save_config(path: Path, opts: dict) -> None:
+    """Save the options into the config file. Raises ValueError, leaving the file
+    as it was, if the result would not be valid TOML."""
+    text = path.read_text(encoding="utf-8") if path.exists() else ""
+    new = update_config(text, opts)
+    try:
+        tomllib.loads(new)
+    except tomllib.TOMLDecodeError as e:
+        raise ValueError(f"the updated file would not be valid ({e}), so it was left as it was") from e
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(new, encoding="utf-8")
