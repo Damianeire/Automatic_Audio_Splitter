@@ -136,14 +136,71 @@ test("candidates: Tune Finder's link first, then loose matches and aliases; defa
   assert.deepEqual([rows["Bad: Name"].action, rows["Bad: Name"].problem], ["none", "has characters a file name cannot hold"]);
 });
 
-test("identified key decides between several loose matches; differing keys flagged", () => {
-  const text = "```loops\nfile: a.m4a\n0:00 - 1:00 | Hughie Travers'\n1:00 - 2:00 | Hughie Travers'\n```\n"
-    + "- 0:00 - 1:00: Hughie Travers', Reel, D ([thesession](https://thesession.org/tunes/1#setting1))\n"
-    + "- 1:00 - 2:00: Hughie Travers', Reel, A dor ([thesession](https://thesession.org/tunes/2#setting2))\n";
+test("identified key decides between several loose matches", () => {
+  const text = "```loops\nfile: a.m4a\n0:00 - 1:00 | Hughie Travers'\n```\n"
+    + "- 0:00 - 1:00: Hughie Travers', Reel, D ([thesession](https://thesession.org/tunes/1#setting1))\n";
   const [row] = E.buildRows(E.parseSections(text), E.parseIdentified(text), [note("Hughie Travers' in G"), note("Hughie Travers' in D")]);
   assert.equal(row.existing, "Hughie Travers' in D");
-  assert.deepEqual(row.keysDiffer, ["D", "A dor"]);
-  assert.equal(row.url, "https://thesession.org/tunes/1#setting1");
+});
+
+// Clock Tavern 19: two different tunes both called Hughie Travers'.
+const TWINS = "```loops\nfile: Sessions/C/10 Set 5.m4a\n5:12 - 6:59 | Hughie Travers'\n6:59 - 8:53 | Hughie Travers'\n9:00 - 9:30 | The Moving Bog\n9:30 - 9:40 | The Moving Bog\n```\n"
+  + "Identified tunes:\n"
+  + "- 5:12 - 6:59: Hughie Travers', Reel, G ([thesession](https://thesession.org/tunes/1518#setting1518))\n"
+  + "- 6:59 - 8:53: Hughie Travers', Reel, A dor ([thesession](https://thesession.org/tunes/3996#setting3996))\n"
+  + "- 9:00 - 9:30: The Moving Bog, Reel, G ([thesession](https://thesession.org/tunes/1012#setting40012))\n";
+
+test("same name, different thesession tunes: two rows, matched by number", () => {
+  const notes = [note("Hughie Travers' in G", { tuneId: "1518" })];
+  const rows = E.buildRows(E.parseSections(TWINS), E.parseIdentified(TWINS), notes);
+  assert.deepEqual(rows.map((r) => [r.name, r.tuneId, r.sections.length]),
+    [["Hughie Travers'", "1518", 1], ["Hughie Travers'", "3996", 1], ["The Moving Bog", "1012", 2]]);
+  const [g, a, bog] = rows;
+  assert.deepEqual([g.action, g.existing, g.candidates[0].why], ["existing", "Hughie Travers' in G", "same tune on thesession"]);
+  assert.equal(g.newName, "Hughie Travers'"); // "in G" is taken by the note it matches
+  // The A dor one is never offered the G note, and gets the key in its suggested name.
+  assert.deepEqual([a.action, a.candidates, a.newName, a.problem], ["create", [], "Hughie Travers' in A dor", ""]);
+  assert.equal(E.aliasFor(a), "Hughie Travers'");
+  assert.deepEqual([bog.action, bog.newName], ["create", "The Moving Bog"]);
+  assert.equal(E.aliasFor(bog), "");
+});
+
+test("a note linked to a different tune is not offered, even by Tune Finder's link", () => {
+  const text = "```loops\nfile: a.m4a\n0:00 - 1:00 | Primrose Lasses\n```\n"
+    + "- 0:00 - 1:00: [[Primrose Lass]], Reel, G ([thesession](https://thesession.org/tunes/2#setting2))\n";
+  const [row] = E.buildRows(E.parseSections(text), E.parseIdentified(text), [note("Primrose Lass", { tuneId: "789" })]);
+  assert.deepEqual([row.action, row.candidates, row.newName], ["create", [], "Primrose Lasses in G"]);
+});
+
+test("a note with the same thesession number is offered whatever its name", () => {
+  const text = "```loops\nfile: a.m4a\n0:00 - 1:00 | Boy in the Boat\n```\n"
+    + "- 0:00 - 1:00: Boy in the Boat, Reel, D ([thesession](https://thesession.org/tunes/975#setting1))\n";
+  const [row] = E.buildRows(E.parseSections(text), E.parseIdentified(text), [note("An tSeanbhean Bhocht", { tuneId: "975" })]);
+  assert.deepEqual([row.action, row.existing], ["existing", "An tSeanbhean Bhocht"]);
+});
+
+test("name problems: bad characters, an existing note, the same name ticked twice", () => {
+  const notes = [note("Primrose Lass")];
+  const r1 = { newName: "X", action: "create" }, r2 = { newName: "x", action: "create" };
+  assert.equal(E.nameProblem("", r1, [r1], notes), "has no name");
+  assert.equal(E.nameProblem("A: B", r1, [r1], notes), "has characters a file name cannot hold");
+  assert.equal(E.nameProblem("primrose lass", r1, [r1], notes), "is already a note");
+  assert.equal(E.nameProblem("X", r1, [r1, r2], notes), "is ticked twice");
+  assert.equal(E.nameProblem("X", r1, [r1], notes), "");
+  const text = "```loops\nfile: a.m4a\n0:00 - 1:00 | Bad: Name\n```\n";
+  assert.deepEqual(E.buildRows(E.parseSections(text), [], []).map((r) => r.action), ["none"]);
+});
+
+test("alias only when the new name adds to the section name", () => {
+  assert.equal(E.aliasFor({ name: "Hughie Travers'", newName: "Hughie Travers' in A dor" }), "Hughie Travers'");
+  assert.equal(E.aliasFor({ name: "Lad O'Bierne's", newName: "Lad O'Beirne's" }), "");
+  assert.equal(E.aliasFor({ name: "X", newName: "X" }), "");
+});
+
+test("thesession numbers", () => {
+  assert.equal(E.tuneIdOf("https://thesession.org/tunes/1518#setting1518"), "1518");
+  assert.equal(E.tuneIdOf(null), "");
+  assert.equal(E.tuneIdOf("https://example.com"), "");
 });
 
 test("file name problems", () => {

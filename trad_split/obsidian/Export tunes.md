@@ -119,51 +119,82 @@ const EXPORT = (() => {
     return "";
   }
 
-  // One row per named tune that has no note. notes: [{ name, path, aliases, tune }],
+  // thesession's number for a tune, from a thesession link. Two tunes with the same
+  // name (Hughie Travers' in G and in A dor) only differ here.
+  const tuneIdOf = (url) => (/thesession\.org\/tunes\/(\d+)/.exec(String(url || "")) || [])[1] || "";
+
+  // Why a new note cannot be called `name`, or "". rows: the other rows in the window.
+  function nameProblem(name, row, rows, notes) {
+    if (!name) return "has no name";
+    const bad = fileNameProblem(name);
+    if (bad) return `${bad}`;
+    if (notes.some((n) => nameKey(n.name) === nameKey(name))) return "is already a note";
+    if (rows.some((r) => r !== row && r.action === "create" && nameKey(r.newName) === nameKey(name))) return "is ticked twice";
+    return "";
+  }
+
+  // One row per named tune that has no note. notes: [{ name, path, aliases, tune, tuneId }],
   // every Markdown file in the vault except the session note itself. `tune` marks
-  // tune notes, the only ones offered by the loose match.
+  // tune notes, the only ones offered by the loose match; `tuneId` comes from `session:`.
+  // Sections with the same name share a row unless thesession says they are different tunes.
   function buildRows(sections, identified, notes) {
     const byKey = new Map();
     for (const n of notes) if (!byKey.has(nameKey(n.name))) byKey.set(nameKey(n.name), n);
     const rows = [];
-    const rowFor = new Map();
     for (const sec of sections) {
       if (!sec.name || isPlaceholder(sec.name) || byKey.has(nameKey(sec.name))) continue;
       const found = findIdentified(sec, identified);
-      let row = rowFor.get(nameKey(sec.name));
+      const id = found ? tuneIdOf(found.url) : "";
+      let row = rows.find((r) => nameKey(r.name) === nameKey(sec.name) && (!id || !r.tuneId || r.tuneId === id));
       if (!row) {
-        row = { name: sec.name, sections: [], found: [], type: "", key: "", url: "", candidates: [] };
-        rowFor.set(nameKey(sec.name), row);
+        row = { name: sec.name, sections: [], found: [], type: "", key: "", url: "", tuneId: "", candidates: [] };
         rows.push(row);
       }
       row.sections.push(sec);
       if (found) {
         row.found.push(found);
-        if (!row.url) Object.assign(row, { type: found.type, key: found.key, url: found.url });
+        if (!row.url || (id && !row.tuneId)) Object.assign(row, { type: found.type, key: found.key, url: found.url, tuneId: id });
       }
     }
     for (const row of rows) {
       const add = (note, why) => {
         if (!row.candidates.some((c) => c.path === note.path)) row.candidates.push({ name: note.name, path: note.path, why });
       };
+      // A note linked to a different thesession tune is never offered, however close the name.
+      const sameTune = (n) => !row.tuneId || !n.tuneId || n.tuneId === row.tuneId;
+      if (row.tuneId) notes.filter((n) => n.tuneId === row.tuneId).forEach((n) => add(n, "same tune on thesession"));
       for (const f of row.found) {
         const target = f.link && byKey.get(nameKey(f.link.split("/").pop()));
-        if (target) add(target, "Tune Finder linked it");
+        if (target && sameTune(target)) add(target, "Tune Finder linked it");
       }
-      const loose = notes.filter((n) => n.tune && (looseMatch(row.name, n.name)
-        || (n.aliases || []).some((a) => nameKey(a) === nameKey(row.name) || looseMatch(row.name, a))));
+      const nameLike = (n) => looseMatch(row.name, n.name)
+        || (n.aliases || []).some((a) => nameKey(a) === nameKey(row.name) || looseMatch(row.name, a));
+      const loose = notes.filter((n) => n.tune && sameTune(n) && nameLike(n));
       // Where several match, the one in the identified key first.
       const tonic = (row.key.match(/^[A-G]/i) || [""])[0].toLowerCase();
       loose.sort((a, b) => (looseKey(b.name).tonic === tonic) - (looseKey(a.name).tonic === tonic));
       for (const n of loose) add(n, "similar name");
       const keys = [...new Set(row.found.map((f) => f.key).filter(Boolean))];
       row.keysDiffer = keys.length > 1 ? keys : null;
-      row.problem = fileNameProblem(row.name);
-      row.action = row.candidates.length ? "existing" : row.problem ? "none" : "create";
+      // Another tune by the same name, here or in the vault: suggest the key in the new name.
+      const twin = rows.some((r) => r !== row && nameKey(r.name) === nameKey(row.name))
+        || notes.some((n) => n.tune && n.tuneId && row.tuneId && n.tuneId !== row.tuneId && nameLike(n));
+      const keyed = `${row.name} in ${row.key}`;
+      row.newName = twin && row.key && !looseKey(row.name).tonic && !byKey.has(nameKey(keyed)) ? keyed : row.name;
+    }
+    for (const row of rows) {
       row.existing = row.candidates.length ? row.candidates[0].name : "";
+      row.action = row.candidates.length ? "existing" : "none";
+      if (!row.candidates.length && !nameProblem(row.newName, row, rows, notes)) row.action = "create";
+      row.problem = nameProblem(row.newName, row, rows, notes);
     }
     return rows;
   }
+
+  // Keep the section's own name as an alias when the new note's name only adds to it
+  // ("Hughie Travers'" on "Hughie Travers' in A dor"), not when it corrects a typo.
+  const aliasFor = (row) => (nameKey(row.newName) !== nameKey(row.name)
+    && looseKey(row.newName).base === looseKey(row.name).base ? row.name : "");
 
   // Rename sections in every loops block. renames: [{ file, start, end, from, to }];
   // a line is renamed when its block's file, its times and its name all match.
@@ -196,7 +227,7 @@ const EXPORT = (() => {
   const plural = (n, word) => `${n} ${word}${n === 1 ? "" : "s"}`;
 
   return { parseTime, cleanName, isPlaceholder, nameKey, parseSections, parseListLine, parseIdentified,
-    findIdentified, looseKey, looseMatch, fileNameProblem, buildRows, renameInLoops, frontmatterOf, plural };
+    findIdentified, looseKey, looseMatch, fileNameProblem, tuneIdOf, nameProblem, buildRows, aliasFor, renameInLoops, frontmatterOf, plural };
 })();
 // ===================== end pure logic =====================
 
@@ -207,14 +238,14 @@ const L = EXPORT;
 
 // The window. Resolves with { mode: "apply" | "plain" | "cancel" }, and each row's
 // action ("create", "existing" or "none") and chosen existing note set on the row.
-const choose = (rows) => new Promise((resolve) => {
+const choose = (rows, notes) => new Promise((resolve) => {
   const modal = new Modal(app);
   let result = { mode: "cancel" };
   modal.titleEl.setText(`${L.plural(rows.length, "tune")} with no note`);
   modal.modalEl.style.width = "min(720px, 94vw)";
   const body = modal.contentEl;
 
-  body.createEl("p", { text: "Tick Create note to make a tune note, or Use existing to rename the section to a note you already have. Tunes left unticked are exported without a link." })
+  body.createEl("p", { text: "Tick Create note to make a tune note (change the name if you like; the section is renamed to match), or Use existing to rename the section to a note you already have. Tunes left unticked are exported without a link." })
     .style.cssText = "margin-top:0;color:var(--text-muted);";
 
   const bar = body.createDiv();
@@ -228,6 +259,7 @@ const choose = (rows) => new Promise((resolve) => {
   status.style.cssText = "color:var(--text-muted);margin:8px 0;";
   const refreshers = [];
   const refresh = () => {
+    recheck();
     refreshers.forEach((f) => f());
     const c = rows.filter((r) => r.action === "create").length;
     const e = rows.filter((r) => r.action === "existing").length;
@@ -235,7 +267,10 @@ const choose = (rows) => new Promise((resolve) => {
     if (c) parts.push(`create ${L.plural(c, "note")}`);
     if (e) parts.push(`use ${L.plural(e, "existing note")}`);
     status.setText(parts.length ? `Will ${parts.join(" and ")}, then export.` : "Nothing to create; the export will run as before.");
+    status.style.color = "var(--text-muted)";
   };
+  // Names are checked against the vault and each other as you type.
+  const recheck = () => rows.forEach((r) => { r.problem = L.nameProblem(r.newName, r, rows, notes); });
 
   rows.forEach((row) => {
     const item = list.createDiv();
@@ -267,13 +302,16 @@ const choose = (rows) => new Promise((resolve) => {
       return { lab, box };
     };
 
-    const create = tick("Create note");
-    if (row.problem) {
-      create.box.disabled = true;
-      create.lab.style.color = "var(--text-faint)";
-      create.lab.title = `The name ${row.problem}. Rename the section first.`;
-      controls.createSpan({ text: `Name ${row.problem}: rename the section first.` }).style.color = "var(--text-warning)";
-    }
+    const create = tick("Create note as");
+    const nameBox = controls.createEl("input", { type: "text", value: row.newName });
+    nameBox.style.cssText = "width:min(280px,60vw);";
+    const warn = controls.createSpan();
+    warn.style.color = "var(--text-warning)";
+    nameBox.addEventListener("input", () => {
+      row.newName = nameBox.value.trim();
+      if (row.action !== "create" && !L.nameProblem(row.newName, row, rows, notes)) row.action = "create";
+      refresh();
+    });
     create.box.addEventListener("change", () => {
       row.action = create.box.checked ? "create" : row.action === "create" ? "none" : row.action;
       refresh();
@@ -299,12 +337,16 @@ const choose = (rows) => new Promise((resolve) => {
     }
     refreshers.push(() => {
       create.box.checked = row.action === "create";
+      warn.setText(row.action === "create" && row.problem ? `That name ${row.problem}.` : "");
+      if (row.newName !== row.name && !L.nameProblem(row.newName, row, rows, notes)) {
+        nameBox.title = `The section is renamed to match${L.aliasFor(row) ? `; "${row.name}" is kept as an alias` : ""}.`;
+      }
       if (use) use.box.checked = row.action === "existing";
     });
   });
 
   allBtn.addEventListener("click", () => {
-    rows.forEach((r) => { if (!r.problem && r.action !== "existing") r.action = "create"; });
+    rows.forEach((r) => { if (r.action !== "existing") r.action = "create"; });
     refresh();
   });
   noneBtn.addEventListener("click", () => {
@@ -318,7 +360,16 @@ const choose = (rows) => new Promise((resolve) => {
   buttons.createEl("button", { text: "Cancel" }).addEventListener("click", () => done("cancel"));
   buttons.createEl("button", { text: "Export without creating" }).addEventListener("click", () => done("plain"));
   const go = buttons.createEl("button", { text: "Create and export", cls: "mod-cta" });
-  go.addEventListener("click", () => done("apply"));
+  go.addEventListener("click", () => {
+    recheck();
+    const bad = rows.filter((r) => r.action === "create" && r.problem);
+    if (bad.length) {
+      status.setText(`Fix the name first: ${bad.map((r) => `"${r.newName}" ${r.problem}`).join("; ")}.`);
+      status.style.color = "var(--text-error)";
+      return;
+    }
+    done("apply");
+  });
 
   refresh();
   modal.onClose = () => resolve(result);
@@ -338,21 +389,57 @@ try {
     const fm = app.metadataCache.getFileCache(f)?.frontmatter || {};
     const aliases = [].concat(fm.aliases || fm.alias || []).filter((a) => typeof a === "string");
     const tags = [].concat(fm.tags || []).map((t) => String(t).replace(/^#/, ""));
-    return { name: f.basename, path: f.path, aliases, tune: f.path.startsWith(TUNE_FOLDER + "/") || tags.includes("tradtune") };
+    return { name: f.basename, path: f.path, aliases, tuneId: L.tuneIdOf(fm.session),
+      tune: f.path.startsWith(TUNE_FOLDER + "/") || tags.includes("tradtune") };
   });
   const rows = L.buildRows(L.parseSections(text), L.parseIdentified(text), notes);
 
   const done = [];
   const problems = [];
   if (rows.length) {
-    const { mode } = await choose(rows);
+    const { mode } = await choose(rows, notes);
     if (mode === "cancel") { new Notice("Export cancelled. Nothing was changed."); return; }
 
     if (mode === "apply") {
-      // Use existing: rename the sections, in the session note and in any other
-      // note's loops block for the same audio, so the player's blocks still agree.
-      const renames = rows.filter((r) => r.action === "existing" && r.existing).flatMap((r) =>
-        r.sections.map((s) => ({ file: s.file, start: s.start, end: s.end, from: r.name, to: r.existing })));
+      // Create note: the Trad Template's frontmatter, then type, key, session and alias.
+      const renames = [];
+      const sectionsTo = (row, to) => row.sections.forEach((sec) =>
+        renames.push({ file: sec.file, start: sec.start, end: sec.end, from: row.name, to }));
+      const toCreate = rows.filter((r) => r.action === "create");
+      if (toCreate.length) {
+        const tpl = app.vault.getAbstractFileByPath(TUNE_TEMPLATE);
+        const skeleton = tpl && L.frontmatterOf(await app.vault.read(tpl));
+        if (!skeleton) throw new Error(`Could not read the frontmatter of ${TUNE_TEMPLATE}`);
+        if (!app.vault.getAbstractFileByPath(TUNE_FOLDER)) await app.vault.createFolder(TUNE_FOLDER);
+        let made = 0;
+        for (const row of toCreate) {
+          if (noteExists(row.newName, session)) { problems.push(`${row.newName} already has a note, left alone`); continue; }
+          let file;
+          try {
+            file = await app.vault.create(normalizePath(`${TUNE_FOLDER}/${row.newName}.md`), skeleton);
+          } catch (e) {
+            problems.push(`could not create ${row.newName}: ${e.message}`);
+            continue;
+          }
+          const alias = L.aliasFor(row);
+          if (row.type || row.key || row.url || alias) {
+            await app.fileManager.processFrontMatter(file, (fm) => {
+              if (row.type) fm.type = row.type;
+              if (row.key) fm.key = row.key;
+              if (row.url) fm.session = row.url;
+              if (alias) fm.aliases = [alias];
+            });
+          }
+          if (row.newName !== row.name) sectionsTo(row, row.newName);
+          made++;
+        }
+        if (made) done.push(`Created ${L.plural(made, "note")}`);
+      }
+
+      // Use existing, and new notes under another name: rename those sections, in the
+      // session note and in any other note's loops block for the same audio, so the
+      // player's blocks still agree.
+      rows.filter((r) => r.action === "existing" && r.existing).forEach((r) => sectionsTo(r, r.existing));
       if (renames.length) {
         let n = 0;
         await app.vault.process(session, (t) => { const r = L.renameInLoops(t, renames); n = r.count; return r.text; });
@@ -366,35 +453,6 @@ try {
           also.push(f.basename);
         }
         if (also.length) done.push(`also renamed in ${also.join(", ")}`);
-      }
-
-      // Create note: the Trad Template's frontmatter, then type, key and session.
-      const toCreate = rows.filter((r) => r.action === "create" && !r.problem);
-      if (toCreate.length) {
-        const tpl = app.vault.getAbstractFileByPath(TUNE_TEMPLATE);
-        const skeleton = tpl && L.frontmatterOf(await app.vault.read(tpl));
-        if (!skeleton) throw new Error(`Could not read the frontmatter of ${TUNE_TEMPLATE}`);
-        if (!app.vault.getAbstractFileByPath(TUNE_FOLDER)) await app.vault.createFolder(TUNE_FOLDER);
-        let made = 0;
-        for (const row of toCreate) {
-          if (noteExists(row.name, session)) { problems.push(`${row.name} already has a note, left alone`); continue; }
-          let file;
-          try {
-            file = await app.vault.create(normalizePath(`${TUNE_FOLDER}/${row.name}.md`), skeleton);
-          } catch (e) {
-            problems.push(`could not create ${row.name}: ${e.message}`);
-            continue;
-          }
-          if (row.type || row.key || row.url) {
-            await app.fileManager.processFrontMatter(file, (fm) => {
-              if (row.type) fm.type = row.type;
-              if (row.key) fm.key = row.key;
-              if (row.url) fm.session = row.url;
-            });
-          }
-          made++;
-        }
-        if (made) done.unshift(`Created ${L.plural(made, "note")}`);
       }
     }
   }
