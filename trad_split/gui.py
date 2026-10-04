@@ -549,6 +549,9 @@ def main(argv: list[str] | None = None) -> int:
     app.setApplicationName(APP_NAME)
     app.setApplicationDisplayName(APP_NAME)
     if send_to_running(paths):
+        # Seen when started from Terminal; the Dock launcher's output goes to the log.
+        print(f"{APP_NAME} is already open, so " + ("the files were added to that window."
+              if paths else "nothing new was opened. Close it first to start a fresh one."))
         return 0
     try:
         opts = initial_options()
