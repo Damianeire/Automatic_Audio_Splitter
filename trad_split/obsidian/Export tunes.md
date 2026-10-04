@@ -137,12 +137,15 @@ const EXPORT = (() => {
   // every Markdown file in the vault except the session note itself. `tune` marks
   // tune notes, the only ones offered by the loose match; `tuneId` comes from `session:`.
   // Sections with the same name share a row unless thesession says they are different tunes.
-  function buildRows(sections, identified, notes) {
+  // self: the name of the note the export runs from. Run from a tune's own note
+  // (The Castle), that tune already has its note: the one you are in.
+  function buildRows(sections, identified, notes, self = "") {
     const byKey = new Map();
     for (const n of notes) if (!byKey.has(nameKey(n.name))) byKey.set(nameKey(n.name), n);
     const rows = [];
     for (const sec of sections) {
       if (!sec.name || isPlaceholder(sec.name) || byKey.has(nameKey(sec.name))) continue;
+      if (self && nameKey(sec.name) === nameKey(self)) continue;
       const found = findIdentified(sec, identified);
       const id = found ? tuneIdOf(found.url) : "";
       let row = rows.find((r) => nameKey(r.name) === nameKey(sec.name) && (!id || !r.tuneId || r.tuneId === id));
@@ -392,7 +395,7 @@ try {
     return { name: f.basename, path: f.path, aliases, tuneId: L.tuneIdOf(fm.session),
       tune: f.path.startsWith(TUNE_FOLDER + "/") || tags.includes("tradtune") };
   });
-  const rows = L.buildRows(L.parseSections(text), L.parseIdentified(text), notes);
+  const rows = L.buildRows(L.parseSections(text), L.parseIdentified(text), notes, session.basename);
 
   const done = [];
   const problems = [];

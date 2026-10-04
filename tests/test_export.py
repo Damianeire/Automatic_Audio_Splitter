@@ -1,4 +1,5 @@
 import json
+import re
 import shutil
 import subprocess
 
@@ -121,3 +122,28 @@ def test_note_without_loops(tmp_path, capsys):
     note.write_text("# nothing here\n")
     assert cli.main(["--export-tunes", str(note), "--config", str(tmp_path / "none.toml")]) == 0
     assert "No loops blocks" in capsys.readouterr().out
+
+
+def test_run_from_a_tunes_own_note_links_it_there(vault):
+    tune_note = vault / "Tunes" / "The Castle.md"
+    tune_note.write_text("""---
+type: Reel
+---
+# The Castle
+
+![[Sessions/20251122 The Clock Tavern 22/02 Set 1.m4a]]
+```loops
+file: Sessions/20251122 The Clock Tavern 22/02 Set 1.m4a
+0:00 - 0:40 | The Castle
+0:40 - 1:20 | The Silver Spear
+1:20 - 2:00 | Lucy Farr's
+```
+""")
+    report = export_tunes(tune_note)
+    assert "The Castle" in report.linked and report.no_note == ["Lucy Farr's"]
+    text = tune_note.read_text()
+    # No date: in a tune note, so the prefix is the recording's own date.
+    assert re.search(r"```\n\n## Recordings\n- !\[\[\d{8} The Castle\.mp3\]\]\n$", text)  # no "from" itself
+    spear = (vault / "Tunes" / "The Silver Spear.md").read_text()
+    assert re.search(r"- !\[\[\d{8} The Silver Spear\.mp3\]\] from \[\[The Castle\]\]", spear)
+    assert export_tunes(tune_note).linked == [] and tune_note.read_text() == text  # safe to re-run
