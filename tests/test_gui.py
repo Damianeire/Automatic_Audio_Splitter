@@ -102,6 +102,29 @@ def test_update_config_new_file_only_writes_changes(opts):
     assert cfg == {"sets_only": True, "vault": "~/Vault"}
 
 
+def test_update_config_single_quoted_paths_with_spaces(opts):
+    # TOML 'literal' strings, as people write paths; the space used to split the value.
+    text = ("output = '/Users/me/Library/Mobile Documents/Vault/Sessions'  # sessions\n"
+            "vault = '/Users/me/Library/Mobile Documents/Vault'\n")
+    opts.update(output=Path("/Users/me/Library/Mobile Documents/Vault/Sessions"),
+                vault=Path("/Users/me/Library/Mobile Documents/Vault"))
+    new = update_config(text, opts)
+    assert tomllib.loads(new) == {"output": "/Users/me/Library/Mobile Documents/Vault/Sessions",
+                                  "vault": "/Users/me/Library/Mobile Documents/Vault"}
+    assert new.splitlines()[0].endswith("  # sessions")
+
+
+def test_save_config_refuses_to_write_an_invalid_file(tmp_path, opts, monkeypatch):
+    from trad_split import gui_options
+
+    config = tmp_path / "config.toml"
+    config.write_text("bias = 1.0\n")
+    monkeypatch.setattr(gui_options, "update_config", lambda text, o: "bias = 1.0 oops\n")
+    with pytest.raises(ValueError, match="left as it was"):
+        gui_options.save_config(config, opts)
+    assert config.read_text() == "bias = 1.0\n"
+
+
 def test_saved_config_is_read_back(tmp_path, opts):
     from trad_split.gui_options import save_config
 

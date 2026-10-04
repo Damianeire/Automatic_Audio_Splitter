@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import json
 import re
+import tomllib
 from pathlib import Path
 
 from . import cli
@@ -142,7 +143,8 @@ def _toml_value(value) -> str:
     return json.dumps(str(value))
 
 
-_ASSIGNMENT = re.compile(r'^(\s*)([A-Za-z0-9_-]+)(\s*=\s*)("(?:[^"\\]|\\.)*"|[^#\s]+)(.*)$')
+# The value is a "basic" string, a 'literal' string (either may hold spaces) or a bare word.
+_ASSIGNMENT = re.compile(r'''^(\s*)([A-Za-z0-9_-]+)(\s*=\s*)("(?:[^"\\]|\\.)*"|'[^']*'|[^#\s]+)(.*)$''')
 
 
 def update_config(text: str, opts: dict) -> str:
@@ -176,6 +178,13 @@ def update_config(text: str, opts: dict) -> str:
 
 
 def save_config(path: Path, opts: dict) -> None:
+    """Save the options into the config file. Raises ValueError, leaving the file
+    as it was, if the result would not be valid TOML."""
     text = path.read_text(encoding="utf-8") if path.exists() else ""
+    new = update_config(text, opts)
+    try:
+        tomllib.loads(new)
+    except tomllib.TOMLDecodeError as e:
+        raise ValueError(f"the updated file would not be valid ({e}), so it was left as it was") from e
     path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(update_config(text, opts), encoding="utf-8")
+    path.write_text(new, encoding="utf-8")
