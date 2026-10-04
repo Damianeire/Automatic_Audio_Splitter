@@ -34,18 +34,41 @@ Sets are not split at tune changes, but the changes are marked:
   ````
   ```loops
   file: Sessions/20251122 The Clock Tavern 22/02 Set 1.m4a
-  0:00 - 2:18 | Tune 1
+  0:00 - 2:20 | Tune 1
   2:18 - 4:34.3 | Tune 2 ?
   ```
   ````
 
 - **Reaper markers** are placed inside each set region, named `Tune 2`, `Tune 3` and so on.
 
-How it works: a tune is played round two or three times, so after its first round the music keeps matching what was heard a minute earlier. A new tune breaks that pattern. This means it works even when two tunes share a key and rhythm. It can miss a change if a tune is played only once. A name ending in `?` marks a weak detection.
+How it works: a tune is played round two or three times, so after its first round the music keeps matching what was heard a minute earlier. A new tune breaks that pattern. This means it works even when two tunes share a key and rhythm. It can miss a change if a tune is played only once. A name ending in `?` marks a weak detection. Weak ones are kept rather than dropped: in real sessions most turn out to be real changes, often into a tune played loosely, so check them by ear and delete any that aren't (`--tune-sensitivity 0.6` leaves out the weakest).
 
 Correcting in Reaper: move, delete or add markers, and rename them with the tune names. A marker at the very start of a set names the first tune. Then re-cut with `--from-reaper`, and the names carry through to the chapters and the note.
 
+Changes are found a second or two early. That makes a good lead-in for the next tune, but would clip the end of the one before, so each tune's section runs 2 s past the change into the next (Tune 1 above ends at 2:20, Tune 2 starts at 2:18). Exported tunes get the same 2 s, including from blocks written before this was added. Set `tune_tail` in the config file to change it; `0` ends each tune exactly at the change.
+
 Settings: `--min-tune` (default 60 s) and `--tune-sensitivity` (default 1; higher finds more). Use `--no-tunes` to turn detection off. With `--plot`, detected changes show as dashed lines.
+
+### Adding loops to any note
+
+The loops blocks don't have to come from a session split. `--add-loops` works on any note: every embedded audio file (`![[Ballina reels.m4a]]`) that has no `loops` block under it is treated as one set, its tune changes are detected, and a block is inserted on the line below the embed:
+
+````
+![[Ballina reels.m4a]]
+```loops
+file: Sound Files/Ballina reels.m4a
+0:00 - 2:20 | Tune 1
+2:18 - 4:34.3 | Tune 2 ?
+```
+````
+
+Embeds that already have a `loops` block are left alone, so you can add a new recording to a note and run it again without losing the names you typed. `--redo-loops` replaces existing blocks too, names and all. `--min-tune` and `--tune-sensitivity` apply as usual, and the analysis is cached, so a redo with a different sensitivity takes a second.
+
+```sh
+trad-split --add-loops "path/to/Practice.md"
+```
+
+From Obsidian it is the "Add loops" command, which `--setup-obsidian` installs alongside Export tunes (see below). It saves the note first, then writes the blocks; Obsidian picks up the change. Detection takes a few seconds per set file the first time.
 
 ### Exporting named tunes
 
@@ -53,9 +76,9 @@ Once the tune names and boundaries in a session note's `loops` blocks are right,
 
 - is named `yyyymmdd Tune Name.mp3`, for example `20251122 The Silver Spear.mp3`. The date comes from the note's `date:`;
 - goes into your sound files folder. That is the `tunes_folder` setting if you set one; otherwise Obsidian's attachment folder (Settings > Files and links); otherwise `Sound Files`;
-- gets a link in the vault note with the same name as the tune (e.g. `The Silver Spear.md`), added under a `## Recordings` heading as `- ![[20251122 The Silver Spear.mp3]] from [[20251122 The Clock Tavern 22]]`. The heading is created if the note doesn't have one.
+- gets a link in the vault note with the same name as the tune (e.g. `The Silver Spear.md`), added under a `## Recordings` heading as `- ![[20251122 The Silver Spear.mp3]] from [[20251122 The Clock Tavern 22]]`. The heading is created if the note doesn't have one. You can also run it from a tune's own note: run from `The Castle.md` on a recording with three tunes, The Castle's recording goes under that note's own `## Recordings` (as `- ![[20251122 The Castle.mp3]]`, with no "from"), and the other two go to their notes as usual, linked back to The Castle.
 
-Sections still called `Tune 2` and so on are skipped until you name them, unless you use `--all`. A trailing `?` is dropped from names. If the same tune comes up twice in one session, the second file gets ` (2)`. Files that already exist are left alone, so running it again is safe; use `--force` to replace them. Tunes with no note of their own are listed in the summary, and no note is created for them.
+Sections still called `Tune 2` and so on are skipped until you name them, unless you use `--all`. A trailing `?` is dropped from names. If the same tune comes up twice in one session, the second file gets ` (2)`. Files that already exist are left alone, so running it again is safe; use `--force` to replace them. From Terminal, tunes with no note of their own are listed in the summary, and no note is created for them. From Obsidian, the Export tunes template lists those tunes in a window first: tick Create note to make `Trad Tunes/<Tune Name>.md` from your `Templates/Trad Template.md` (with type, key and the thesession link from Tune Finder's Identified tunes list), or Use existing to rename the section to a near-matching note you already have (for example Primrose Lasses to Primrose Lass). Notes are matched on the thesession tune number first (Tune Finder's link against each note's `session:`), so two different tunes with the same name, like the two Hughie Travers', are kept apart; the new note's name can be edited, and when another tune has the same name the key is suggested in it ("Hughie Travers' in A dor") with the plain name kept as an alias. The export then links the recording into those notes. Export without creating runs the export as before; Cancel does nothing.
 
 Set files that are already mp3 are copied without re-encoding. m4a set files are converted to mp3 (LAME VBR, about 190 kbps, a second or two per tune). Set `tune_format = "m4a"` to keep them as m4a.
 
@@ -65,17 +88,29 @@ From Terminal:
 trad-split --export-tunes "path/to/20251122 The Clock Tavern 22.md"
 ```
 
-From Obsidian, with Templater:
+From Obsidian, with Templater (install it from Community plugins first). Quit Obsidian, then run:
 
-1. Copy `obsidian/Export tunes.md` from this repo into your Templater templates folder.
-2. Go to Settings > Templater > User system command functions, and turn it on. Set Timeout to 120 seconds, because the default of a few seconds is too short for mp3 conversion.
-3. Add a function named `export_tunes` with this command:
-   ```sh
-   "$HOME/Code/trad-split/.venv/bin/trad-split" --export-tunes "$note"
-   ```
-4. Optionally, add a hotkey for it in Settings > Templater > Template hotkeys, by adding `Export tunes`.
+```sh
+trad-split --setup-obsidian
+```
 
-To use it, open a session note and run Templater: Insert template > Export tunes, or press your hotkey. Nothing is inserted into the note. A notice shows the result, for example `Exported 5 tunes; linked 3; no tune note for: The Mason's Apron.`
+This uses the `vault` from your config file, or pass `--vault`. It does the following:
+- copies the Export tunes and Add loops templates into Templater's templates folder;
+- turns on Templater's user system command functions;
+- adds `export_tunes` and `add_loops` functions that run this install of trad-split;
+- raises the command timeout to 120 s;
+- registers both templates so they can have hotkeys.
+
+It backs up Templater's settings first. It refuses to run while Obsidian is open, because Templater would write its old settings back over the changes. Running it again is safe.
+
+To give them hotkeys, reopen Obsidian and go to Settings > Hotkeys, search for "Export tunes" and "Add loops" and assign keys. If you set up Export tunes before Add loops existed, run `--setup-obsidian` again to add it.
+
+If you'd rather set it up by hand:
+1. Copy `trad_split/obsidian/Export tunes.md` and `trad_split/obsidian/Add loops.md` into your Templater templates folder.
+2. In Settings > Templater, turn on User system command functions and set Timeout to 120 seconds.
+3. Add a function named `export_tunes` with the command `"$HOME/Code/trad-split/.venv/bin/trad-split" --export-tunes "$note"`, and one named `add_loops` with `"$HOME/Code/trad-split/.venv/bin/trad-split" --add-loops "$note"`.
+
+To use it, open a session note and press your hotkey, or run "Templater: Insert Export tunes" from the command palette. Nothing is inserted into the note. A notice shows the result, for example `Exported 5 tunes; linked 3; no tune note for: The Mason's Apron.`
 
 ## Setup (Mac)
 

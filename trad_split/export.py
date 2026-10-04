@@ -4,17 +4,26 @@ Reads the ```loops blocks trad-split writes (and you correct) in a session
 note, cuts every named section out of its set file as
 "yyyymmdd <Tune Name>.mp3" in the vault's sound files folder, and links the
 new file from the vault note of the same name.
+
+Detected tune changes land a second or two early (the new tune's start is
+judged on a window reaching into it), which is a fine lead-in for the next
+tune but clips the end of this one. New loops blocks already run each tune
+`tail` seconds on; a tune that ends exactly where the next starts (an older
+block) is cut `tail` seconds past the change here.
 """
 
 from __future__ import annotations
 
 import json
+import os
 import re
+import unicodedata
 from dataclasses import dataclass, field
 from pathlib import Path
 
 from . import audio
 from .outputs import loop_time, parse_loop_time
+from .tunes import TAIL
 
 DEFAULT_NAME = re.compile(r"^Tune \d+$")
 _BLOCK = re.compile(r"^```loops[ \t]*\n(.*?)^```", re.S | re.M)
@@ -74,6 +83,24 @@ def _frontmatter_date(text: str) -> str | None:
     return None
 
 
+def _key(name: str) -> str:
+    """How Obsidian matches names: accents compared by meaning, case ignored.
+
+    macOS can store "é" as e plus a combining accent while the note has the
+    single character, so plain string comparison misses the file.
+    """
+    return unicodedata.normalize("NFC", name).casefold()
+
+
+def _vault_files(vault: Path, suffix: str | None = None):
+    """Every file in the vault outside .obsidian, .trash and .git, shallowest first."""
+    found = []
+    for root, dirs, names in os.walk(vault):
+        dirs[:] = [d for d in dirs if d not in _SKIP_DIRS]
+        found += [Path(root) / n for n in names if suffix is None or n.lower().endswith(suffix)]
+    return sorted(found, key=lambda p: len(p.parts))
+
+
 def _resolve(link: str, note: Path, vault: Path) -> Path:
     link = link.strip()
     if link.startswith("[[") and link.endswith("]]"):
@@ -81,9 +108,14 @@ def _resolve(link: str, note: Path, vault: Path) -> Path:
     for base in (vault, note.parent):
         if (base / link).exists():
             return base / link
-    # Bare file name: Obsidian finds it anywhere in the vault.
-    hits = [p for p in vault.rglob(Path(link).name) if not _SKIP_DIRS & set(p.relative_to(vault).parts)]
-    return hits[0] if hits else vault / link
+    # Bare file name, or a path whose accents are stored differently on disk:
+    # Obsidian finds it anywhere in the vault.
+    target = _key(link)
+    name = _key(Path(link).name)
+    files = _vault_files(vault)
+    hit = next((f for f in files if _key(f.relative_to(vault).as_posix()) == target), None)
+    hit = hit or next((f for f in files if _key(f.name) == name), None)
+    return hit or vault / link
 
 
 def parse_note(note: Path, vault: Path) -> tuple[list[Section], str | None]:
@@ -123,9 +155,8 @@ def sounds_folder(vault: Path, note: Path, configured: str | Path | None) -> Pat
 
 def _tune_notes(vault: Path) -> dict[str, Path]:
     notes: dict[str, Path] = {}
-    for p in sorted(vault.rglob("*.md"), key=lambda p: len(p.parts)):
-        if not _SKIP_DIRS & set(p.relative_to(vault).parts):
-            notes.setdefault(p.stem.casefold(), p)
+    for p in _vault_files(vault, ".md"):
+        notes.setdefault(_key(p.stem), p)
     return notes
 
 
@@ -150,7 +181,8 @@ def add_recording_link(tune_note: Path, line: str, marker: str) -> bool:
 
 
 def export_tunes(note: Path, *, vault: Path | None = None, folder: str | Path | None = None,
-                 fmt: str = "mp3", include_unnamed: bool = False, force: bool = False) -> Report:
+                 fmt: str = "mp3", include_unnamed: bool = False, force: bool = False,
+                 tail: float = TAIL) -> Report:
     note = note.expanduser().resolve()
     vault = find_vault(note, vault)
     sections, date = parse_note(note, vault)
@@ -164,6 +196,7 @@ def export_tunes(note: Path, *, vault: Path | None = None, folder: str | Path | 
     session = note.stem
     seen: dict[str, int] = {}
     durations: dict[Path, float] = {}
+    starts = {(s.set_file, s.start) for s in sections}
 
     for sec in sections:
         name = re.sub(r"\s*\?$", "", sec.name).strip()
@@ -176,6 +209,8 @@ def export_tunes(note: Path, *, vault: Path | None = None, folder: str | Path | 
         if sec.set_file not in durations:
             durations[sec.set_file] = audio.duration(sec.set_file)
         end = sec.end if sec.end is not None else durations[sec.set_file]
+        if (sec.set_file, end) in starts:
+            end = min(end + tail, durations[sec.set_file])
 
         prefix = date or audio.recorded_at(sec.set_file)[0].strftime("%Y%m%d")
         seen[name] = seen.get(name, 0) + 1
@@ -193,10 +228,12 @@ def export_tunes(note: Path, *, vault: Path | None = None, folder: str | Path | 
             })
             report.exported.append(dst.stem)
 
-        tune_note = notes.get(name.casefold())
-        if tune_note is None or tune_note == note:
+        # Run from a tune's own note (The Castle), its recording goes in that note too.
+        tune_note = notes.get(_key(name))
+        source = "" if tune_note == note else f" from [[{session}]]"
+        if tune_note is None:
             if name not in report.no_note:
                 report.no_note.append(name)
-        elif add_recording_link(tune_note, f"- ![[{dst.name}]] from [[{session}]]", f"[[{dst.name}]]"):
+        elif add_recording_link(tune_note, f"- ![[{dst.name}]]{source}", f"[[{dst.name}]]"):
             report.linked.append(name)
     return report

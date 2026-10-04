@@ -63,7 +63,7 @@ def test_recut_from_reaper(memo, tmp_path):
     note = (session / "20251122 Session.md").read_text()
     assert "set_count: 2" in note and "![[03 Set 2.m4a]]" in note
     assert read_rpp(rpp)[1][0].name == "Set 1 - Kesh"  # project untouched
-    assert "```loops\nfile: 03 Set 2.m4a\n0:00 - 0:20 | Tune 1\n0:20 - 0:50 | The Silver Spear\n```" in note
+    assert "```loops\nfile: 03 Set 2.m4a\n0:00 - 0:22 | Tune 1\n0:20 - 0:50 | The Silver Spear\n```" in note
     chapters = probe_chapters(session / "03 Set 2.m4a")
     assert [(round(float(c["start_time"])), c["tags"]["title"]) for c in chapters] == \
         [(0, "Tune 1"), (20, "The Silver Spear")]

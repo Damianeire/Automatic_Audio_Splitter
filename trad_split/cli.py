@@ -31,6 +31,7 @@ DEFAULTS = {
     "pad": None,  # shortcut for pad_start and pad_end together
     "tunes_folder": None,  # where --export-tunes puts files; default: Obsidian's attachment folder
     "tune_format": "mp3",
+    "tune_tail": 2.0,  # seconds a tune's loop and export run past the change into the next one
     "tunes": True,  # mark tune changes inside sets
     "min_tune": 60.0,
     "tune_sensitivity": 1.0,
@@ -80,6 +81,16 @@ def build_parser() -> argparse.ArgumentParser:
     exp.add_argument("--tunes-folder", help="folder for tune files (default: Obsidian's attachment folder)")
     exp.add_argument("--tune-format", choices=["mp3", "m4a"], help="tune file format (default mp3)")
     exp.add_argument("--all", action="store_true", help="also export sections still named 'Tune N'")
+    exp.add_argument("--setup-obsidian", action="store_true",
+                     help="install the Export tunes and Add loops commands into the vault's Templater "
+                          "(Obsidian closed)")
+
+    lp = p.add_argument_group("add tune loops under audio files in any note")
+    lp.add_argument("--add-loops", type=Path, metavar="NOTE",
+                    help="detect tune changes in each audio file embedded in NOTE and add a loops "
+                         "block under it (embeds that already have one are left alone)")
+    lp.add_argument("--redo-loops", action="store_true",
+                    help="with --add-loops, replace existing loops blocks too (loses typed names)")
 
     src = p.add_argument_group("use edited boundaries instead of detecting")
     src.add_argument("--from-reaper", type=Path, metavar="RPP",
@@ -274,7 +285,8 @@ def process(memo: Path, opts: dict, *, edited: list[Segment] | None = None,
         if opts["force"] or not note.exists():
             note.write_text(obsidian_note(
                 title=title, source=memo, recorded=recorded, length=length,
-                segments=segments, files=files, link_root=opts["vault"]), encoding="utf-8")
+                segments=segments, files=files, link_root=opts["vault"], tail=opts["tune_tail"]),
+                encoding="utf-8")
         else:
             print(f"  kept existing {note.name} (use --force to replace)", file=sys.stderr)
 
@@ -288,13 +300,37 @@ def main(argv: list[str] | None = None) -> int:
     args = build_parser().parse_args(argv)
     opts = resolve_options(args)
     try:
+        if args.setup_obsidian:
+            from .obsidian_setup import SetupError, setup
+
+            if opts["vault"] is None:
+                raise SystemExit("error: no vault. Pass --vault or set vault in the config file.")
+            try:
+                done = setup(opts["vault"])
+            except SetupError as e:
+                raise SystemExit(f"error: {e}")
+            print("\n".join(f"- {d}" for d in done) if done else "Already set up; nothing changed.")
+            print("\nIn Obsidian, run them from the command palette (Templater: Insert Export tunes, "
+                  "Templater: Insert Add loops), or give them keys in Settings > Hotkeys.")
+            return 0
+
         if args.export_tunes:
             from .export import export_tunes
 
             report = export_tunes(args.export_tunes, vault=opts["vault"], folder=opts["tunes_folder"],
-                                  fmt=opts["tune_format"], include_unnamed=args.all, force=opts["force"])
+                                  fmt=opts["tune_format"], include_unnamed=args.all, force=opts["force"],
+                                  tail=opts["tune_tail"])
             print(report.summary() if report.exported or report.existing or report.unnamed
                   or report.missing_files else "No loops blocks with tunes found in this note.")
+            return 0
+
+        if args.add_loops:
+            from .loops import add_loops
+
+            report = add_loops(args.add_loops, vault=opts["vault"], replace=args.redo_loops,
+                               min_tune=opts["min_tune"], sensitivity=opts["tune_sensitivity"],
+                               rescan=opts["rescan"], tail=opts["tune_tail"])
+            print(report.summary())
             return 0
 
         if args.from_reaper:
