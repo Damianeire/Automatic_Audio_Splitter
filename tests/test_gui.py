@@ -29,12 +29,12 @@ def test_kind():
 
 def test_every_option_round_trips(opts):
     opts.update(audio=False, sets_only=True, obsidian=True, force=True, bias=-0.75, min_set=55.0,
-                tune_sensitivity=1.5, output=Path("/out"), vault=Path("/vault"))
+                tune_sensitivity=1.5, tune_tail=3.5, output=Path("/out"), vault=Path("/vault"))
     argv = build_argv(opts, Path("memo.m4a"))
     got = parse(argv)
     for key in ["audio", "sets_only", "reaper", "obsidian", "plot", "tunes", "reencode", "force",
                 "rescan", "min_set", "min_chat", "pad_start", "pad_end", "switch_penalty", "bias",
-                "min_tune", "tune_sensitivity", "output", "vault"]:
+                "min_tune", "tune_sensitivity", "tune_tail", "output", "vault"]:
         assert got[key] == opts[key], key
     assert argv[0] == "memo.m4a"
 
@@ -55,11 +55,12 @@ def test_reaper_item(opts):
 
 
 def test_note_item(opts):
-    opts.update(tune_format="m4a", vault=Path("/v"))
+    opts.update(tune_format="m4a", tune_tail=0.0, vault=Path("/v"))
     argv = build_argv(opts, Path("/v/Sessions/20251122 X.md"), include_unnamed=True)
     args = cli.build_parser().parse_args(argv)
     assert args.export_tunes == Path("/v/Sessions/20251122 X.md")
     assert args.tune_format == "m4a" and args.all and args.vault == Path("/v")
+    assert args.tune_tail == 0.0  # the export runs tunes past the change by the window's amount
 
 
 def test_session_dirs():

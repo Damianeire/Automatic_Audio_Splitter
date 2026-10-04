@@ -45,7 +45,7 @@ How it works: a tune is played round two or three times, so after its first roun
 
 Correcting in Reaper: move, delete or add markers, and rename them with the tune names. A marker at the very start of a set names the first tune. Then re-cut with `--from-reaper`, and the names carry through to the chapters and the note.
 
-Changes are found a second or two early. That makes a good lead-in for the next tune, but would clip the end of the one before, so each tune's section runs 2 s past the change into the next (Tune 1 above ends at 2:20, Tune 2 starts at 2:18). Exported tunes get the same 2 s, including from blocks written before this was added. Set `tune_tail` in the config file to change it; `0` ends each tune exactly at the change.
+Changes are found a second or two early. That makes a good lead-in for the next tune, but would clip the end of the one before, so each tune's section runs 2 s past the change into the next (Tune 1 above ends at 2:20, Tune 2 starts at 2:18). Exported tunes get the same 2 s, including from blocks written before this was added. Change it with `--tune-tail`, `tune_tail` in the config file, or the window's Advanced settings; `0` ends each tune exactly at the change.
 
 Settings: `--min-tune` (default 60 s) and `--tune-sensitivity` (default 1; higher finds more). Use `--no-tunes` to turn detection off. With `--plot`, detected changes show as dashed lines.
 

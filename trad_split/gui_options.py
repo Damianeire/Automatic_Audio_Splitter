@@ -32,6 +32,7 @@ NUMBERS = [
     ("bias", "Bias (+ music, - chat)", -5, 5, 0.25, 2),
     ("min_tune", "Shortest tune (s)", 10, 600, 5, 1),
     ("tune_sensitivity", "Tune sensitivity", 0.1, 5, 0.1, 2),
+    ("tune_tail", "Run past tune change (s)", 0, 10, 0.5, 1),
 ]
 
 TUNE_FORMATS = ["mp3", "m4a"]
@@ -74,6 +75,7 @@ def build_argv(opts: dict, item: Path, *, include_unnamed: bool = False) -> list
     what = kind(item)
     if what == NOTE:
         argv = ["--export-tunes", str(item), f"--tune-format={opts['tune_format']}",
+                f"--tune-tail={float(opts['tune_tail']):g}",
                 "--force" if opts["force"] else "--no-force"]
         if opts.get("tunes_folder"):
             argv.append(f"--tunes-folder={opts['tunes_folder']}")
