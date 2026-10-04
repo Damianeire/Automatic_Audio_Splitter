@@ -237,6 +237,8 @@ const EXPORT = (() => {
 const { Notice, Modal, Platform, normalizePath } = tp.obsidian;
 const TUNE_FOLDER = "Trad Tunes";
 const TUNE_TEMPLATE = "Templates/Trad Template.md";
+// Body of a new tune note: the standard sections, practice log last.
+const SECTIONS = "## Recordings\n\n## Sheet Music\n\n## Practice Log\n";
 const L = EXPORT;
 
 // The window. Resolves with { mode: "apply" | "plain" | "cancel" }, and each row's
@@ -419,7 +421,7 @@ try {
           if (noteExists(row.newName, session)) { problems.push(`${row.newName} already has a note, left alone`); continue; }
           let file;
           try {
-            file = await app.vault.create(normalizePath(`${TUNE_FOLDER}/${row.newName}.md`), skeleton);
+            file = await app.vault.create(normalizePath(`${TUNE_FOLDER}/${row.newName}.md`), skeleton + SECTIONS);
           } catch (e) {
             problems.push(`could not create ${row.newName}: ${e.message}`);
             continue;
