@@ -11,6 +11,11 @@ This works whether or not the key or rhythm changes, but needs each tune
 to be played at least twice through. The A-to-B change inside a tune's
 first round also looks new, which is why a change must follow a long
 repeating stretch and be at least min_tune after the previous one.
+
+Weak changes (strength from 0.15) are kept and marked as guesses rather
+than dropped: in real sessions most of them are real changes, often into a
+tune played loosely or only twice, and a guess is easier to delete than a
+missing boundary is to find.
 """
 
 from __future__ import annotations
@@ -22,6 +27,8 @@ import numpy as np
 SAMPLE_RATE = 22050
 HOP = 0.5  # seconds per feature frame, same as the music/chat scores
 _STFT_HOP = 512
+WEAK = 0.15  # weakest change kept, at sensitivity 1
+CONFIDENT = 0.4  # weaker changes are marked as guesses
 
 
 @dataclass
@@ -38,7 +45,7 @@ class TuneChange:
 
     @property
     def confident(self) -> bool:
-        return self.strength >= 0.4
+        return self.strength >= CONFIDENT
 
 
 def features(audio: np.ndarray, sr: int = SAMPLE_RATE) -> dict[str, np.ndarray]:
@@ -107,7 +114,7 @@ def find_changes(chroma: np.ndarray, start: float, end: float,
     for t in range(left, n - right):
         step[t] = _drop(rep, t, left, right)
 
-    threshold = 0.25 / p.sensitivity
+    threshold = WEAK / p.sensitivity
     edge, gap, fine = int(p.edge / hop), int(p.min_tune / hop), int(8 / hop)
     picked: list[tuple[int, float]] = []
     for t in np.argsort(step)[::-1]:
