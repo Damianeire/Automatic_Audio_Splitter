@@ -36,6 +36,20 @@ def test_noisy_room():
     assert len(found) == 2 and all(abs(f - t) <= 5 for f, t in zip(found, truth))
 
 
+def test_weak_change_is_kept_as_a_guess():
+    # The second tune is mostly the first one again, so the change is faint.
+    first = tune(62, seed=1)
+    second = 0.4 * tune(62, seed=2) + 0.6 * tune(62, seed=1)
+    audio = set_of(first, second)
+    f = tunes.features(audio)
+    found, _ = tunes.find_changes(f["chroma"], 0, len(audio) / SR)
+    assert len(found) == 1 and abs(found[0].time - len(first) / SR) <= 5
+    assert tunes.WEAK <= found[0].strength < tunes.CONFIDENT and not found[0].confident
+    # Lower sensitivity still drops it.
+    fewer, _ = tunes.find_changes(f["chroma"], 0, len(audio) / SR, tunes.TuneParams(sensitivity=0.5))
+    assert fewer == []
+
+
 def test_short_set_is_one_tune():
     chroma = np.random.default_rng(0).random((12, 100))
     assert tunes.find_changes(chroma, 0, 50)[0] == []

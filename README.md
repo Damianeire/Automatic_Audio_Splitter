@@ -41,7 +41,7 @@ Sets are not split at tune changes, but the changes are marked:
 
 - **Reaper markers** are placed inside each set region, named `Tune 2`, `Tune 3` and so on.
 
-How it works: a tune is played round two or three times, so after its first round the music keeps matching what was heard a minute earlier. A new tune breaks that pattern. This means it works even when two tunes share a key and rhythm. It can miss a change if a tune is played only once. A name ending in `?` marks a weak detection.
+How it works: a tune is played round two or three times, so after its first round the music keeps matching what was heard a minute earlier. A new tune breaks that pattern. This means it works even when two tunes share a key and rhythm. It can miss a change if a tune is played only once. A name ending in `?` marks a weak detection. Weak ones are kept rather than dropped: in real sessions most turn out to be real changes, often into a tune played loosely, so check them by ear and delete any that aren't (`--tune-sensitivity 0.6` leaves out the weakest).
 
 Correcting in Reaper: move, delete or add markers, and rename them with the tune names. A marker at the very start of a set names the first tune. Then re-cut with `--from-reaper`, and the names carry through to the chapters and the note.
 
