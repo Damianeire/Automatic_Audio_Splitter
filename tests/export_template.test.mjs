@@ -92,10 +92,11 @@ test("rows: named tunes with no note, once each, NFC and case matching", () => {
   assert.deepEqual(lad.candidates, []);
 });
 
-test("rows: a note that only matches the session note itself does not count", () => {
-  // buildRows is given every note except the session, so a section named like it is listed.
+test("rows: the note you run from only counts when it is passed as self", () => {
+  // buildRows is given every note except the one you run from; the template passes its name as self.
   const text = "```loops\nfile: a.m4a\n0:00 - 1:00 | My Session\n```\n";
   assert.equal(E.buildRows(E.parseSections(text), [], []).length, 1);
+  assert.equal(E.buildRows(E.parseSections(text), [], [], "My Session").length, 0);
 });
 
 test("loose matching on the near misses", () => {
@@ -243,4 +244,12 @@ test("frontmatter of the tune template, without its Templater block", () => {
   const tpl = "---\ntags:\n  - tradtune\ntype:\nWaitinglist: true\n---\n<%*\nawait tp.file.move('x');\n-%>\n";
   assert.equal(E.frontmatterOf(tpl), "---\ntags:\n  - tradtune\ntype:\nWaitinglist: true\n---\n");
   assert.equal(E.frontmatterOf("no frontmatter"), null);
+});
+
+test("run from a tune's own note, that tune is not offered (accents and case ignored)", () => {
+  const text = "```loops\nfile: a.mp3\n0:00 - 1:00 | The Castle\n1:00 - 2:00 | Ríl an Spidéil\n2:00 - 3:00 | Lucy Farr's\n```\n";
+  const rows = E.buildRows(E.parseSections(text), [], [], "the castle");
+  assert.deepEqual(rows.map((r) => r.name), ["Ríl an Spidéil", "Lucy Farr's"]);
+  const fromSpideil = E.buildRows(E.parseSections(text), [], [], "Ríl an Spidéil");
+  assert.deepEqual(fromSpideil.map((r) => r.name), ["The Castle", "Lucy Farr's"]);
 });

@@ -217,10 +217,12 @@ def export_tunes(note: Path, *, vault: Path | None = None, folder: str | Path | 
             })
             report.exported.append(dst.stem)
 
+        # Run from a tune's own note (The Castle), its recording goes in that note too.
         tune_note = notes.get(_key(name))
-        if tune_note is None or tune_note == note:
+        source = "" if tune_note == note else f" from [[{session}]]"
+        if tune_note is None:
             if name not in report.no_note:
                 report.no_note.append(name)
-        elif add_recording_link(tune_note, f"- ![[{dst.name}]] from [[{session}]]", f"[[{dst.name}]]"):
+        elif add_recording_link(tune_note, f"- ![[{dst.name}]]{source}", f"[[{dst.name}]]"):
             report.linked.append(name)
     return report
