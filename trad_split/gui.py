@@ -10,14 +10,14 @@ import os
 import sys
 from pathlib import Path
 
-from PySide6.QtCore import QEvent, QProcess, QProcessEnvironment, Qt, QTimer, QUrl
+from PySide6.QtCore import QEvent, QProcess, QProcessEnvironment, QSize, Qt, QTimer, QUrl
 from PySide6.QtGui import QDesktopServices, QFontDatabase
 from PySide6.QtNetwork import QLocalServer, QLocalSocket
 from PySide6.QtWidgets import (
     QAbstractItemView, QApplication, QCheckBox, QComboBox, QDoubleSpinBox, QFileDialog,
     QFormLayout, QGridLayout, QGroupBox, QHBoxLayout, QLabel, QLineEdit, QListWidget,
-    QListWidgetItem, QMainWindow, QMessageBox, QPlainTextEdit, QPushButton, QSizePolicy,
-    QStyle, QToolButton, QVBoxLayout, QWidget,
+    QListWidgetItem, QMainWindow, QMessageBox, QPlainTextEdit, QPushButton, QScrollArea,
+    QSizePolicy, QSplitter, QStyle, QToolButton, QVBoxLayout, QWidget,
 )
 
 from . import cli
@@ -34,6 +34,13 @@ SOCKET_NAME = "trad-split-gui"
 EXTRA_PATH = ["/opt/homebrew/bin", "/usr/local/bin"]
 
 PATH_ROLE = Qt.UserRole
+
+
+class FileList(QListWidget):
+    """Starts a few rows tall; the window's spare room goes to the log."""
+
+    def sizeHint(self) -> QSize:
+        return QSize(super().sizeHint().width(), 110)
 
 
 class Window(QMainWindow):
@@ -53,26 +60,58 @@ class Window(QMainWindow):
 
         self.setWindowTitle(APP_NAME)
         self.setAcceptDrops(True)
-        body = QWidget()
-        layout = QVBoxLayout(body)
+        # The settings scroll, so the window can be made as small as you like;
+        # the divider above the buttons trades their room for the log's.
+        settings = QWidget()
+        layout = QVBoxLayout(settings)
         layout.addWidget(self._files_box())
         layout.addWidget(self._where_box())
         layout.addWidget(self._outputs_box())
         layout.addWidget(self._advanced_box())
-        layout.addLayout(self._buttons())
-        layout.addWidget(self._log_pane(), 1)
-        self.setCentralWidget(body)
-        self.resize(660, 900)
+        layout.addStretch()
+        scroll = QScrollArea()
+        scroll.setWidget(settings)
+        scroll.setWidgetResizable(True)
+        scroll.setFrameShape(QScrollArea.NoFrame)
+        scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
+        scroll.setMinimumWidth(settings.minimumSizeHint().width())
+
+        bottom = QWidget()
+        v = QVBoxLayout(bottom)
+        margin = layout.contentsMargins()
+        v.setContentsMargins(margin.left(), 0, margin.right(), margin.bottom())
+        v.addLayout(self._buttons())
+        v.addWidget(self._log_pane(), 1)
+
+        split = QSplitter(Qt.Vertical)
+        split.addWidget(scroll)
+        split.addWidget(bottom)
+        split.setChildrenCollapsible(False)
+        split.setStretchFactor(1, 1)
+        self.setCentralWidget(split)
+        self._fit_to_screen(split, settings.sizeHint().height())
         self._update_buttons()
+
+    def _fit_to_screen(self, split: QSplitter, settings_height: int) -> None:
+        """Open as tall as the settings plus some log, but no taller than the screen.
+        Short of room, the settings get it first and the log keeps a few lines."""
+        log_height, buttons = 220, 60
+        height = settings_height + buttons + log_height
+        screen = self.screen()
+        if screen is not None:
+            height = min(height, screen.availableGeometry().height() - 40)
+        top = min(settings_height, height - buttons - 120)
+        self.resize(660, height)
+        split.setSizes([top, height - top])
 
     # Layout
 
     def _files_box(self) -> QGroupBox:
         box = QGroupBox("Files")
         v = QVBoxLayout(box)
-        self.files = QListWidget()
+        self.files = FileList()
         self.files.setSelectionMode(QAbstractItemView.ExtendedSelection)
-        self.files.setMinimumHeight(110)
+        self.files.setMinimumHeight(60)
         self.files.itemSelectionChanged.connect(self._update_buttons)
         v.addWidget(self.files)
         hint = QLabel("Drop memos, folders of memos, Reaper projects (re-cut) or session notes "
@@ -188,7 +227,7 @@ class Window(QMainWindow):
             check.setChecked(bool(self.opts[key]))
             check.setToolTip(TIPS.get(key, ""))
             self.checks[key] = check
-            grid.addWidget(check, n % 4, n // 4)
+            grid.addWidget(check, n % 5, n // 5)
         self.checks["audio"].toggled.connect(self.checks["sets_only"].setEnabled)
         self.checks["sets_only"].setEnabled(self.checks["audio"].isChecked())
         self.checks["joined"].toggled.connect(self.checks["apple_music"].setEnabled)
@@ -261,7 +300,7 @@ class Window(QMainWindow):
         self.log = QPlainTextEdit()
         self.log.setReadOnly(True)
         self.log.setMaximumBlockCount(5000)
-        self.log.setMinimumHeight(150)
+        self.log.setMinimumHeight(60)
         self.log.setFont(QFontDatabase.systemFont(QFontDatabase.FixedFont))
         self.log.setPlaceholderText("Progress shows here.")
         self.log.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
