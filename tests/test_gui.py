@@ -29,12 +29,13 @@ def test_kind():
 
 
 def test_every_option_round_trips(opts):
-    opts.update(audio=False, sets_only=True, obsidian=True, force=True, bias=-0.75, min_set=55.0,
+    opts.update(audio=False, sets_only=True, obsidian=True, force=True, joined=True, apple_music=True,
+                bias=-0.75, min_set=55.0,
                 tune_sensitivity=1.5, tune_tail=3.5, output=Path("/out"), vault=Path("/vault"))
     argv = build_argv(opts, Path("memo.m4a"))
     got = parse(argv)
     for key in ["audio", "sets_only", "reaper", "obsidian", "plot", "tunes", "reencode", "force",
-                "rescan", "min_set", "min_chat", "pad_start", "pad_end", "switch_penalty", "bias",
+                "rescan", "joined", "apple_music", "min_set", "min_chat", "pad_start", "pad_end", "switch_penalty", "bias",
                 "min_tune", "tune_sensitivity", "tune_tail", "output", "vault"]:
         assert got[key] == opts[key], key
     assert argv[0] == "memo.m4a"

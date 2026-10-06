@@ -19,6 +19,8 @@ BOOLS = [
     ("plot", "Score plot"),
     ("tunes", "Mark tune changes"),
     ("reencode", "Re-encode (AAC 192k)"),
+    ("joined", "One mp3 of all the sets"),
+    ("apple_music", "Add it to Apple Music"),
     ("force", "Overwrite existing project and note"),
     ("rescan", "Rescan, ignore cached scores"),
 ]
@@ -46,6 +48,10 @@ TIPS = {
     "tunes": "Find where one tune changes to the next inside each set, and mark it in the files and note.",
     "reencode": "Convert the audio to AAC instead of copying it as it is. Slower; only needed "
                 "if a player has trouble with the files.",
+    "joined": "A single mp3 with every set back to back and the chat left out, for listening "
+              "straight through.",
+    "apple_music": "Copy the joined mp3 into Apple Music, which adds it to your library. Only the "
+                   "first time; splitting again does not add a second copy.",
     "force": "Replace a Reaper project or note that is already there. Without this they are kept.",
     "rescan": "Analyse the recording again instead of reusing the saved analysis.",
 }

@@ -191,6 +191,8 @@ class Window(QMainWindow):
             grid.addWidget(check, n % 4, n // 4)
         self.checks["audio"].toggled.connect(self.checks["sets_only"].setEnabled)
         self.checks["sets_only"].setEnabled(self.checks["audio"].isChecked())
+        self.checks["joined"].toggled.connect(self.checks["apple_music"].setEnabled)
+        self.checks["apple_music"].setEnabled(self.checks["joined"].isChecked())
         return box
 
     def _advanced_box(self) -> QWidget:
