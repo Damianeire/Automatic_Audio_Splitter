@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import argparse
 import re
+import shutil
 import sys
 import tomllib
 from dataclasses import fields
@@ -22,6 +23,8 @@ DEFAULTS = {
     "sets_only": False,
     "reaper": True,
     "obsidian": False,
+    "joined": False,  # one mp3 of all the sets; offered in the window only
+    "apple_music": False,  # copy that mp3 into Apple Music
     "plot": False,
     "reencode": False,
     "force": False,
@@ -74,6 +77,9 @@ def build_parser() -> argparse.ArgumentParser:
     out.add_argument("--plot", action=B, help="save a PNG of the scores and segments")
     out.add_argument("--reencode", action=B, help="re-encode to AAC 192k instead of stream copy")
     out.add_argument("--force", action=B, help="overwrite an existing Reaper project or note")
+    # The window's "One mp3 of all the sets" and "Add it to Apple Music"; not offered here.
+    out.add_argument("--joined", action=B, help=argparse.SUPPRESS)
+    out.add_argument("--apple-music", action=B, help=argparse.SUPPRESS)
 
     exp = p.add_argument_group("export named tunes from a session note")
     exp.add_argument("--export-tunes", type=Path, metavar="NOTE",
@@ -114,6 +120,8 @@ def build_parser() -> argparse.ArgumentParser:
     tun.add_argument("--min-tune", type=float, help="shortest tune in seconds (default 60)")
     tun.add_argument("--tune-sensitivity", type=float,
                      help="higher marks more changes, lower fewer (default 1.0)")
+    tun.add_argument("--tune-tail", type=float,
+                     help="seconds each tune's loop and export run past the change (default 2)")
     det.add_argument("--device", help="torch device: auto, cpu, mps, cuda")
     det.add_argument("--model", type=Path, help="path to Cnn14_DecisionLevelMax checkpoint")
     return p
@@ -237,6 +245,44 @@ def export_audio(memo: Path, session_dir: Path, title: str, segments: list[Segme
     return files
 
 
+def export_joined(memo: Path, session_dir: Path, title: str, segments: list[Segment],
+                  recorded) -> tuple[Path, bool]:
+    """One mp3 of every set back to back, chat left out. Returns it and whether it is new."""
+    from .outputs import clock
+
+    sets = [s for s in segments if s.kind == SET]
+    dst = session_dir / f"{title} - all sets.mp3"
+    new = not dst.exists()
+    length = audio.join(memo, dst, [(s.start, s.end) for s in sets], titles=[s.name for s in sets],
+                        tags={"title": f"{title} (all sets)", "album": title, "artist": "Session",
+                              "date": f"{recorded:%Y-%m-%d}"})
+    print(f"  joined {len(sets)} sets into {dst.name} ({clock(length)})", file=sys.stderr)
+    return dst, new
+
+
+def music_inbox() -> Path | None:
+    """Apple Music's 'Automatically Add to Music' folder, if there is one."""
+    found = sorted((Path.home() / "Music" / "Music").glob("Media*/Automatically Add to Music*"))
+    return next((p for p in found if p.is_dir()), None)
+
+
+def add_to_apple_music(path: Path, new: bool) -> None:
+    """Copy into Music's auto-add folder; Music imports it from there.
+
+    Only for a newly made file, since Music adds another copy each time.
+    """
+    if not new:
+        print("  already sent to Music earlier; not added again", file=sys.stderr)
+        return
+    inbox = music_inbox()
+    if inbox is None:
+        print("  warning: could not find Apple Music's 'Automatically Add to Music' folder; "
+              "not added", file=sys.stderr)
+        return
+    shutil.copy2(path, inbox / path.name)
+    print("  added to Apple Music", file=sys.stderr)
+
+
 def process(memo: Path, opts: dict, *, edited: list[Segment] | None = None,
             session_dir: Path | None = None, classifier_cache: dict | None = None) -> None:
     from .outputs import clock, obsidian_note, plot
@@ -279,6 +325,11 @@ def process(memo: Path, opts: dict, *, edited: list[Segment] | None = None,
     files: dict[int, Path] = {}
     if opts["audio"]:
         files = export_audio(memo, session_dir, title, segments, opts, recorded)
+
+    if opts["joined"] and sets:
+        joined, new = export_joined(memo, session_dir, title, segments, recorded)
+        if opts["apple_music"]:
+            add_to_apple_music(joined, new)
 
     if opts["obsidian"]:
         note = session_dir / f"{title}.md"

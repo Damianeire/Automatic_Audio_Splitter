@@ -17,9 +17,13 @@ dependencies = [
 
 [project.optional-dependencies]
 dev = ["pytest"]
+gui = ["PySide6"]
 
 [project.scripts]
 trad-split = "trad_split.cli:main"
+
+[project.gui-scripts]
+trad-split-gui = "trad_split.gui:main"
 
 [tool.setuptools]
 packages = ["trad_split"]
