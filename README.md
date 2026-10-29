@@ -45,7 +45,7 @@ How it works: a tune is played round two or three times, so after its first roun
 
 Correcting in Reaper: move, delete or add markers, and rename them with the tune names. A marker at the very start of a set names the first tune. Then re-cut with `--from-reaper`, and the names carry through to the chapters and the note.
 
-Changes are found a second or two early. That makes a good lead-in for the next tune, but would clip the end of the one before, so each tune's section runs 2 s past the change into the next (Tune 1 above ends at 2:20, Tune 2 starts at 2:18). Exported tunes get the same 2 s, including from blocks written before this was added. Set `tune_tail` in the config file to change it; `0` ends each tune exactly at the change.
+Changes are found a second or two early. That makes a good lead-in for the next tune, but would clip the end of the one before, so each tune's section runs 2 s past the change into the next (Tune 1 above ends at 2:20, Tune 2 starts at 2:18). Exported tunes get the same 2 s, including from blocks written before this was added. Change it with `--tune-tail`, `tune_tail` in the config file, or the window's Advanced settings; `0` ends each tune exactly at the change.
 
 Settings: `--min-tune` (default 60 s) and `--tune-sensitivity` (default 1; higher finds more). Use `--no-tunes` to turn detection off. With `--plot`, detected changes show as dashed lines.
 
@@ -151,6 +151,30 @@ Each memo gets its own session folder, placed next to the memo unless you give `
 A normal run never overwrites an existing `.RPP` or note. Pass `--force` to replace them. `--from-csv regions.csv memo.m4a` does the same job from a CSV, for example one exported from Reaper's Region/Marker Manager.
 
 You can also render regions directly from Reaper (File > Render > Bounds: Project regions, file name `$region`). Going back through `trad-split` is better, though, because it tags the files and keeps the Obsidian note in step with them.
+
+## App
+
+There is also a window for all of this. It has a file list, checkboxes for the outputs, and an Advanced section with the detection and tune settings. Press Split and the progress shows in the window.
+
+Setup, once:
+
+```sh
+cd ~/Code/trad-split
+.venv/bin/pip install -e '.[gui]'     # adds PySide6 (Qt)
+scripts/make-app.sh                   # builds ~/Applications/Trad Split.app
+```
+
+Then drag `Trad Split.app` from `~/Applications` to the Dock. Run `scripts/make-app.sh` again if you move the repo folder.
+
+To use it:
+
+- Add files with Add Files..., by dragging them into the list, or by dropping them on the app's Dock icon. You can do this while a run is going.
+- Where things go: tick Put session folders in and choose a folder. Each recording gets its own session folder there, holding an audio file per set, and the note and Reaper project if you make them; untick it to put each session folder next to its recording. To make an Obsidian note, tick Make an Obsidian note and choose your vault (the folder you open in Obsidian). The note is saved in the session folder, so Obsidian only shows it if the session folders are inside your vault; the window warns you if they are not. Hover over the other options for what they do.
+- Each item is handled the same way as in the Finder Quick Action: a memo or folder of memos is split, a `.RPP` is re-cut from your Reaper edits, and a session note (`.md`) has its named tunes exported.
+- The window opens with the settings from your config file. Changes apply to the next run only, unless you press Save as Defaults. That writes them to `~/.config/trad-split/config.toml` and keeps any comments in the file. Overwrite and Rescan are never saved, because they are meant for one run at a time.
+- Open Session Folder opens the folders from the last run. Stop ends the current run and skips the rest of the list.
+
+While it is open, the window shows in the Dock as a separate Python icon. The Trad Split icon is only the launcher. If the window does not appear, check `~/Library/Logs/trad-split-gui.log`. You can also start it from Terminal with `.venv/bin/trad-split-gui`.
 
 ## Obsidian
 

@@ -219,3 +219,32 @@ def test_detects_tunes_end_to_end(tmp_path, monkeypatch):
     assert "| Tune 2" in (session / "20251122 Pub.md").read_text()
     regions = read_rpp(session / "20251122 Pub.RPP")[1]
     assert [m.name for m in regions[0].marks] == ["Tune 2"]
+
+
+def test_joined_mp3_and_apple_music(memo, tmp_path, monkeypatch):
+    home = tmp_path / "home"
+    inbox = home / "Music" / "Music" / "Media.localized" / "Automatically Add to Music.localized"
+    inbox.mkdir(parents=True)
+    monkeypatch.setattr(cli.Path, "home", lambda: home)
+    csv = tmp_path / "r.csv"
+    csv.write_text("#,Name,Start,End\nR1,Chat,0,10\nR2,Set 1,10,70\nR3,Chat,70,80\nR4,Set 2,80,120\n")
+    args = [str(memo), "--from-csv", str(csv), "--no-audio", "--no-reaper", "--joined",
+            "--apple-music", "--config", str(tmp_path / "none.toml")]
+
+    assert cli.main(args) == 0
+    joined = tmp_path / "20251122 Session - all sets.mp3"
+    from trad_split.audio import duration
+    assert abs(duration(joined) - 100) < 0.5
+    assert [(round(float(c["start_time"])), c["tags"]["title"]) for c in probe_chapters(joined)] == \
+        [(0, "Set 1"), (60, "Set 2")]
+    assert [p.name for p in inbox.iterdir()] == [joined.name]
+
+    (inbox / joined.name).unlink()  # Music took it
+    assert cli.main(args) == 0
+    assert list(inbox.iterdir()) == []  # not added a second time
+
+
+def test_joined_hidden_from_help(capsys):
+    with pytest.raises(SystemExit):
+        cli.main(["--help"])
+    assert "joined" not in capsys.readouterr().out

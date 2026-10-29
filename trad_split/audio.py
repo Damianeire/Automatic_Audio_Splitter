@@ -106,6 +106,36 @@ def codec_for(src: Path, dst: Path) -> str:
     return {".mp3": "mp3", ".m4a": "aac"}.get(d, "copy")
 
 
+class _ChapterFile:
+    """A temporary ffmetadata file of chapters, as extra ffmpeg input arguments."""
+
+    def __init__(self, chapters: list[tuple[float, float, str]]):
+        f = tempfile.NamedTemporaryFile("w", suffix=".txt", delete=False, encoding="utf-8")
+        f.write(_ffmetadata(chapters))
+        f.close()
+        self.path = Path(f.name)
+
+    def input_args(self) -> list[str]:
+        return ["-f", "ffmetadata", "-i", str(self.path)]
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *exc):
+        self.path.unlink(missing_ok=True)
+
+
+MP3_ARGS = ["-c:a", "libmp3lame", "-q:a", "2", "-id3v2_version", "3"]
+
+
+def _run(cmd: list[str]) -> None:
+    result = subprocess.run(cmd, capture_output=True, text=True)
+    if result.returncode:
+        if "libmp3lame" in result.stderr:
+            raise FFmpegMissing("this ffmpeg cannot write mp3. Install one that can: brew install ffmpeg")
+        raise subprocess.CalledProcessError(result.returncode, cmd, result.stdout, result.stderr)
+
+
 def cut(src: Path, dst: Path, start: float, end: float, *, reencode: bool = False,
         codec: str | None = None, tags: dict[str, str] | None = None,
         chapters: list[tuple[float, float, str]] | None = None) -> None:
@@ -120,19 +150,16 @@ def cut(src: Path, dst: Path, start: float, end: float, *, reencode: bool = Fals
            "-ss", f"{start:.3f}", "-t", f"{max(end - start, 0.01):.3f}", "-i", str(src)]
     meta_file = None
     if chapters and len(chapters) > 1 and dst.suffix.lower() in CHAPTER_EXTS:
-        meta_file = tempfile.NamedTemporaryFile("w", suffix=".txt", delete=False, encoding="utf-8")
-        meta_file.write(_ffmetadata(chapters))
-        meta_file.close()
+        meta_file = _ChapterFile(chapters)
         # Metadata from the chapter file (it has no global tags), so chapter titles survive.
-        cmd += ["-f", "ffmetadata", "-i", meta_file.name, "-map", "0:a",
-                "-map_chapters", "1", "-map_metadata", "1"]
+        cmd += [*meta_file.input_args(), "-map", "0:a", "-map_chapters", "1", "-map_metadata", "1"]
     else:
         cmd += ["-map_metadata", "-1"]
     cmd += ["-vn"]
     if codec == "aac":
         cmd += ["-c:a", "aac", "-b:a", "192k"]
     elif codec == "mp3":
-        cmd += ["-c:a", "libmp3lame", "-q:a", "2", "-id3v2_version", "3"]
+        cmd += MP3_ARGS
     else:
         cmd += ["-c", "copy"]
     for key, value in (tags or {}).items():
@@ -141,11 +168,39 @@ def cut(src: Path, dst: Path, start: float, end: float, *, reencode: bool = Fals
         cmd += ["-movflags", "+faststart"]
     cmd.append(str(dst))
     try:
-        result = subprocess.run(cmd, capture_output=True, text=True)
-        if result.returncode:
-            if "libmp3lame" in result.stderr:
-                raise FFmpegMissing("this ffmpeg cannot write mp3. Install one that can: brew install ffmpeg")
-            raise subprocess.CalledProcessError(result.returncode, cmd, result.stdout, result.stderr)
+        _run(cmd)
     finally:
         if meta_file:
-            Path(meta_file.name).unlink(missing_ok=True)
+            meta_file.path.unlink(missing_ok=True)
+
+
+def join(src: Path, dst: Path, spans: list[tuple[float, float]], *,
+         tags: dict[str, str] | None = None, titles: list[str] | None = None,
+         fade: float = 0.5) -> float:
+    """Write the spans of src back to back into one mp3 at dst; return its length.
+
+    Each span fades in and out over `fade` seconds so the joins don't click.
+    titles, one per span, become chapters.
+    """
+    parts, offsets, t = [], [], 0.0
+    for n, (a, b) in enumerate(spans):
+        length = b - a
+        f = min(fade, length / 2)
+        parts.append(f"[0:a]atrim=start={a:.3f}:end={b:.3f},asetpts=PTS-STARTPTS,"
+                     f"afade=t=in:d={f:.3f},afade=t=out:st={length - f:.3f}:d={f:.3f}[s{n}]")
+        offsets.append((t, t + length))
+        t += length
+    graph = ";".join(parts) + ";" + "".join(f"[s{n}]" for n in range(len(spans))) + \
+        f"concat=n={len(spans)}:v=0:a=1[out]"
+    cmd = [_tool("ffmpeg"), "-nostdin", "-v", "error", "-y", "-i", str(src)]
+    with _ChapterFile([(a, b, name) for (a, b), name in zip(offsets, titles or [])]) as meta:
+        if titles:
+            cmd += [*meta.input_args(), "-map_chapters", "1", "-map_metadata", "1"]
+        else:
+            cmd += ["-map_metadata", "-1"]
+        cmd += ["-filter_complex", graph, "-map", "[out]", *MP3_ARGS]
+        for key, value in (tags or {}).items():
+            cmd += ["-metadata", f"{key}={value}"]
+        cmd.append(str(dst))
+        _run(cmd)
+    return t
