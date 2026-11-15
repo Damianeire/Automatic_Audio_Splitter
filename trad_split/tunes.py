@@ -49,18 +49,33 @@ class TuneChange:
         return self.strength >= CONFIDENT
 
 
+CHUNK = 300.0  # seconds of audio per CQT pass; a whole set-length recording at once needs gigabytes
+
+
 def features(audio: np.ndarray, sr: int = SAMPLE_RATE) -> dict[str, np.ndarray]:
-    """Chroma per HOP-second frame for a whole recording."""
+    """Chroma per HOP-second frame for a whole recording.
+
+    Works in CHUNK-second pieces: the CQT of a whole recording at once can
+    need more memory than the machine has, and then the process thrashes.
+    CHUNK is a multiple of HOP, so every piece starts on a frame boundary.
+    """
     import librosa
 
-    chroma = librosa.feature.chroma_cqt(y=audio, sr=sr, hop_length=_STFT_HOP, bins_per_octave=36)
     n_out = int(np.ceil(len(audio) / sr / HOP))
-    edges = np.minimum(np.round(np.arange(n_out + 1) * HOP * sr / _STFT_HOP).astype(int), chroma.shape[1])
     pooled = np.zeros((12, n_out), dtype=np.float32)
-    for i in range(n_out):
-        a, b = edges[i], max(edges[i + 1], edges[i] + 1)
-        if a < chroma.shape[1]:
-            pooled[:, i] = chroma[:, a:b].mean(axis=1)
+    per_chunk = int(round(CHUNK / HOP))  # frames per piece
+    step = per_chunk * int(round(HOP * sr))  # samples per piece
+    for start in range(0, len(audio), step):
+        piece = audio[start:start + step]
+        chroma = librosa.feature.chroma_cqt(y=piece, sr=sr, hop_length=_STFT_HOP, bins_per_octave=36)
+        first = start // int(round(HOP * sr))
+        n_piece = min(per_chunk, n_out - first)
+        edges = np.minimum(np.round(np.arange(n_piece + 1) * HOP * sr / _STFT_HOP).astype(int), chroma.shape[1])
+        for i in range(n_piece):
+            a, b = edges[i], max(edges[i + 1], edges[i] + 1)
+            if a < chroma.shape[1]:
+                pooled[:, first + i] = chroma[:, a:b].mean(axis=1)
+        del chroma
     return {"chroma": pooled, "hop": np.float32(HOP)}
 
 
