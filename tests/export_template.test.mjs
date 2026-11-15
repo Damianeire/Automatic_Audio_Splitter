@@ -310,3 +310,188 @@ test("renaming a Tune N section by its own name, ' ?' and all", () => {
   assert.match(text, /^4:56 - 6:30 \| Tune 3$/m);
   assert.match(text, /^0:00 - 1:00 \| Tune 1$/m); // same name, other set file: untouched
 });
+
+// ---- Naming set files after their tunes ----
+
+const NOTE = `---
+type: session
+date: 2025-11-22
+---
+## Set 1
+![[Sessions/20251122 The Clock Tavern 22/02 Set 1.m4a]]
+\`\`\`loops
+file: Sessions/20251122 The Clock Tavern 22/02 Set 1.m4a
+0:00 - 1:00 | The Silver Spear
+1:00 - 2:00 | The Kesh ?
+2:00 - 3:00 | Lucy Farr's
+\`\`\`
+tunes::
+
+## Set 2
+![[Sessions/20251122 The Clock Tavern 22/04 Set 2.m4a]]
+\`\`\`loops
+file: Sessions/20251122 The Clock Tavern 22/04 Set 2.m4a
+0:00 - 1:00 | The Mason's Apron
+1:00 - 2:00 | Tune 2 ?
+2:00 - 3:00 | The Castle
+\`\`\`
+
+## Set 3
+\`\`\`loops
+file: Sessions/20251122 The Clock Tavern 22/06 Set 3.m4a
+0:00 - 1:00 | Tune 1
+1:00 - 2:00 | Tune 2
+\`\`\`
+
+## Timeline
+| 2 | [[Sessions/20251122 The Clock Tavern 22/02 Set 1.m4a\\|Set 1]] | 0:10 |
+`;
+const DIR = "Sessions/20251122 The Clock Tavern 22";
+const info = (path) => {
+  const folder = path.slice(0, path.lastIndexOf("/"));
+  const file = path.slice(path.lastIndexOf("/") + 1);
+  return { path, folder, stem: file.replace(/\.[^.]+$/, ""), ext: file.split(".").pop() };
+};
+const resolveIn = (files) => (value) => {
+  const v = E.unwrap(value);
+  const hit = files.find((p) => p === v || p.endsWith("/" + v));
+  return hit ? info(hit) : null;
+};
+
+test("set files: which ones are set files, and their date", () => {
+  assert.deepEqual(E.setFileParts("02 Set 1"), { date: "", set: "Set 1" });
+  assert.deepEqual(E.setFileParts("05 Set 3 - Silver Spear, Mason's Apron"), { date: "", set: "Set 3" });
+  assert.deepEqual(E.setFileParts("20251122 Set 12 - Kesh"), { date: "20251122", set: "Set 12" });
+  assert.equal(E.setFileParts("Séamus McGuire, John Lee - Leitrim Clog Dance"), null);
+  assert.equal(E.setFileParts("03 Chat 2"), null);
+  assert.equal(E.setFileParts("20251122 The Clock Tavern 22 - all sets"), null);
+  assert.equal(E.noteDate(NOTE), "20251122");
+  assert.equal(E.noteDate("# no frontmatter\ndate: 2025-01-01\n"), "");
+});
+
+test("set file names: 'The' dropped, gaps Unnamed, long names end in +N", () => {
+  assert.equal(E.setFileName("20251122", "Set 1", ["The Silver Spear", "The Kesh ?", "Lucy Farr's"]),
+    "20251122 Set 1 - Silver Spear, Kesh, Lucy Farr's");
+  assert.equal(E.setFileName("20251122", "Set 2", ["The Mason's Apron", "Tune 2 ?", "Theodore's Reel"]),
+    "20251122 Set 2 - Mason's Apron, Unnamed, Theodore's Reel");
+  assert.equal(E.setFileName("20251122", "Set 3", ["Tune 1", "Tune 2"]), null);
+  assert.equal(E.shortTune("Hughie Travers' in A: dor?"), "Hughie Travers' in A dor");
+  const long = E.setFileName("20251122", "Set 4", ["The Silver Spear", "The Mason's Apron",
+    "Good Morning to Your Nightcap", "The Trip to Herve's", "The Duke of Leinster"]);
+  assert.equal(long, "20251122 Set 4 - Silver Spear, Mason's Apron, Good Morning to Your Nightcap +2");
+  assert.ok(long.length <= 80);
+  const one = E.setFileName("20251122", "Set 5", ["A".repeat(100), "B"]);
+  assert.equal(one, `20251122 Set 5 - ${"A".repeat(100)} +1`);
+});
+
+test("rename plan: named sets only, in time order, unchanged names left alone", () => {
+  const files = [`${DIR}/02 Set 1.m4a`, `${DIR}/04 Set 2.m4a`, `${DIR}/06 Set 3.m4a`];
+  assert.deepEqual(E.planSetRenames(NOTE, resolveIn(files)), [
+    { from: `${DIR}/02 Set 1.m4a`, to: `${DIR}/20251122 Set 1 - Silver Spear, Kesh, Lucy Farr's.m4a` },
+    { from: `${DIR}/04 Set 2.m4a`, to: `${DIR}/20251122 Set 2 - Mason's Apron, Unnamed, Castle.m4a` },
+  ]);
+  // Already renamed and nothing changed: nothing to do. Missing files are skipped.
+  const done = [`${DIR}/20251122 Set 1 - Silver Spear, Kesh, Lucy Farr's.m4a`];
+  const text = NOTE.replaceAll("02 Set 1.m4a", "20251122 Set 1 - Silver Spear, Kesh, Lucy Farr's.m4a");
+  assert.deepEqual(E.planSetRenames(text, resolveIn(done)), []);
+  // Renamed once, then a tune renamed: renamed again.
+  const later = text.replace("| Lucy Farr's", "| The Wise Maid");
+  assert.deepEqual(E.planSetRenames(later, resolveIn(done)).map((r) => r.to),
+    [`${DIR}/20251122 Set 1 - Silver Spear, Kesh, Wise Maid.m4a`]);
+});
+
+test("rename plan: no date in the note, the file's or the folder's date is used, else nothing", () => {
+  const tuneNote = "# The Castle\n```loops\nfile: 04 Set 2.m4a\n0:00 - 1:00 | The Castle\n1:00 - 2:00 | Lucy Farr's\n```\n";
+  assert.deepEqual(E.planSetRenames(tuneNote, resolveIn([`${DIR}/04 Set 2.m4a`])).map((r) => r.to),
+    [`${DIR}/20251122 Set 2 - Castle, Lucy Farr's.m4a`]);
+  assert.deepEqual(E.planSetRenames(tuneNote, resolveIn(["Audio/04 Set 2.m4a"])), []);
+  const own = "```loops\nfile: Leitrim Clog Dance.mp3\n0:00 - 1:00 | Leitrim Clog\n```\n";
+  assert.deepEqual(E.planSetRenames(own, resolveIn(["Audio/Leitrim Clog Dance.mp3"])), []);
+});
+
+test("links: embeds, aliases, table links and loops file: lines follow the rename; others untouched", () => {
+  const from = `${DIR}/02 Set 1.m4a`;
+  const to = `${DIR}/20251122 Set 1 - Silver Spear, Kesh, Lucy Farr's.m4a`;
+  const pointsAt = (v) => (v === from || v === "02 Set 1.m4a" ? from : null);
+  const { text, count } = E.retargetLinks(NOTE + "Bare: ![[02 Set 1.m4a]] and [[04 Set 2.m4a]]\n", pointsAt, new Map([[from, to]]));
+  assert.equal(count, 4);
+  assert.ok(text.includes(`![[${to}]]\n\`\`\`loops\nfile: ${to}\n0:00 - 1:00 | The Silver Spear`));
+  assert.ok(text.includes(`| 2 | [[${to}\\|Set 1]] | 0:10 |`));
+  assert.ok(text.includes(`Bare: ![[${to}]] and [[04 Set 2.m4a]]`));
+  assert.ok(text.includes(`file: ${DIR}/04 Set 2.m4a`));
+  assert.deepEqual(E.linkValues(NOTE).slice(0, 3),
+    [`${DIR}/02 Set 1.m4a`, `${DIR}/04 Set 2.m4a`, `${DIR}/06 Set 3.m4a`]);
+});
+
+// The Obsidian side of the renaming, run against a small fake vault.
+function fakeVault(files) {
+  const store = new Map(Object.entries(files));
+  const fileOf = (path) => {
+    if (!store.has(path)) return null;
+    const name = path.split("/").pop();
+    const folder = path.includes("/") ? path.slice(0, path.lastIndexOf("/")) : "/";
+    return { path, name, basename: name.replace(/\.[^.]+$/, ""), extension: name.split(".").pop(), parent: { path: folder } };
+  };
+  const app = {
+    vault: {
+      getAbstractFileByPath: fileOf,
+      getMarkdownFiles: () => [...store.keys()].filter((p) => p.endsWith(".md")).map(fileOf),
+      read: async (f) => store.get(f.path),
+      cachedRead: async (f) => store.get(f.path),
+      process: async (f, fn) => { store.set(f.path, fn(store.get(f.path))); },
+      rename: async (f, to) => { store.set(to, store.get(f.path)); store.delete(f.path); },
+    },
+    metadataCache: {
+      // Like Obsidian: a full path, else a file with that name, preferring the linking note's folder.
+      getFirstLinkpathDest: (link, from) => {
+        if (store.has(link)) return fileOf(link);
+        const near = from.slice(0, from.lastIndexOf("/") + 1) + link;
+        if (store.has(near)) return fileOf(near);
+        const hit = [...store.keys()].find((p) => p.split("/").pop() === link);
+        return hit ? fileOf(hit) : null;
+      },
+    },
+  };
+  return { app, store };
+}
+
+function loadRenamer(app) {
+  const a = source.indexOf("const linkDest = ");
+  const b = source.indexOf("// Is there now a note with this name");
+  return new Function("app", "L", `${source.slice(a, b)}\nreturn renameSetFiles;`)(app, E);
+}
+
+test("renaming set files in a vault: files moved, every note's links and file: lines follow", async () => {
+  const other = "Sessions/20251129 Ballina/02 Set 1.m4a";
+  const { app, store } = fakeVault({
+    [`${DIR}/20251122 The Clock Tavern 22.md`]: NOTE,
+    [`${DIR}/02 Set 1.m4a`]: "audio1", [`${DIR}/04 Set 2.m4a`]: "audio2", [`${DIR}/06 Set 3.m4a`]: "audio3",
+    [`${DIR}/20251122 Set 2 - Mason's Apron, Unnamed, Castle.m4a`]: "in the way",
+    "Trad Tunes/The Kesh.md": `# The Kesh\n![[${DIR}/02 Set 1.m4a]]\n\`\`\`loops\nfile: ${DIR}/02 Set 1.m4a\n1:00 - 2:00 | The Kesh\n\`\`\`\n`,
+    [other]: "audio other",
+    "Sessions/20251129 Ballina/20251129 Ballina.md": "## Set 1\n![[02 Set 1.m4a]]\n```loops\nfile: 02 Set 1.m4a\n0:00 - 1:00 | Tune 1\n```\n",
+  });
+  const renameSetFiles = loadRenamer(app);
+  const session = app.vault.getAbstractFileByPath(`${DIR}/20251122 The Clock Tavern 22.md`);
+  const result = await renameSetFiles(session);
+  const to = `${DIR}/20251122 Set 1 - Silver Spear, Kesh, Lucy Farr's.m4a`;
+  assert.deepEqual(result.renamed, ["20251122 Set 1 - Silver Spear, Kesh, Lucy Farr's.m4a"]);
+  assert.deepEqual(result.problems, ["20251122 Set 2 - Mason's Apron, Unnamed, Castle.m4a already exists, so 04 Set 2.m4a kept its name"]);
+  assert.equal(store.get(to), "audio1");
+  assert.equal(store.has(`${DIR}/02 Set 1.m4a`), false);
+  assert.equal(store.get(`${DIR}/04 Set 2.m4a`), "audio2");
+
+  const note = store.get(`${DIR}/20251122 The Clock Tavern 22.md`);
+  assert.ok(note.includes(`![[${to}]]\n\`\`\`loops\nfile: ${to}\n`));
+  assert.ok(note.includes(`[[${to}\\|Set 1]]`));
+  assert.ok(note.includes(`file: ${DIR}/04 Set 2.m4a`));
+  assert.ok(store.get("Trad Tunes/The Kesh.md").includes(`![[${to}]]\n\`\`\`loops\nfile: ${to}\n`));
+  // Another session's own "02 Set 1.m4a" is a different file: untouched.
+  assert.equal(store.get(other), "audio other");
+  assert.ok(store.get("Sessions/20251129 Ballina/20251129 Ballina.md").includes("![[02 Set 1.m4a]]\n```loops\nfile: 02 Set 1.m4a"));
+
+  // Running again changes nothing.
+  const before = new Map(store);
+  assert.deepEqual((await renameSetFiles(session)).renamed, []);
+  assert.deepEqual(store, before);
+});
