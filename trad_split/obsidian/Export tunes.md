@@ -139,18 +139,32 @@ const EXPORT = (() => {
   // Sections with the same name share a row unless thesession says they are different tunes.
   // self: the name of the note the export runs from. Run from a tune's own note
   // (The Castle), that tune already has its note: the one you are in.
+  //
+  // A section still called Tune 2 gets a row only if Tune Finder identified it: the row
+  // is named after Tune Finder's name (its [[link]] if it found a note) and marked
+  // `identified`, and its sections keep their own name (Tune 2) until renamed.
   function buildRows(sections, identified, notes, self = "") {
     const byKey = new Map();
     for (const n of notes) if (!byKey.has(nameKey(n.name))) byKey.set(nameKey(n.name), n);
     const rows = [];
     for (const sec of sections) {
-      if (!sec.name || isPlaceholder(sec.name) || byKey.has(nameKey(sec.name))) continue;
-      if (self && nameKey(sec.name) === nameKey(self)) continue;
+      if (!sec.name) continue;
       const found = findIdentified(sec, identified);
+      let name = sec.name;
+      const fromFinder = isPlaceholder(sec.name);
+      if (fromFinder) {
+        name = found ? cleanName(found.link ? found.link.split("/").pop() : found.name) : "";
+        if (!name || isPlaceholder(name)) continue;
+      } else {
+        if (byKey.has(nameKey(name))) continue;
+        if (self && nameKey(name) === nameKey(self)) continue;
+      }
       const id = found ? tuneIdOf(found.url) : "";
-      let row = rows.find((r) => nameKey(r.name) === nameKey(sec.name) && (!id || !r.tuneId || r.tuneId === id));
+      let row = rows.find((r) => nameKey(r.name) === nameKey(name) && r.identified === fromFinder
+        && (!id || !r.tuneId || r.tuneId === id));
       if (!row) {
-        row = { name: sec.name, sections: [], found: [], type: "", key: "", url: "", tuneId: "", candidates: [] };
+        row = { name, identified: fromFinder, sections: [], found: [], type: "", key: "", url: "", tuneId: "",
+          candidates: [] };
         rows.push(row);
       }
       row.sections.push(sec);
@@ -165,6 +179,11 @@ const EXPORT = (() => {
       };
       // A note linked to a different thesession tune is never offered, however close the name.
       const sameTune = (n) => !row.tuneId || !n.tuneId || n.tuneId === row.tuneId;
+      if (row.identified) {
+        const named = byKey.get(nameKey(row.name));
+        if (named && sameTune(named)) add(named, "Tune Finder named it");
+        if (self && nameKey(row.name) === nameKey(self)) add({ name: self, path: "" }, "the note you ran this from");
+      }
       if (row.tuneId) notes.filter((n) => n.tuneId === row.tuneId).forEach((n) => add(n, "same tune on thesession"));
       for (const f of row.found) {
         const target = f.link && byKey.get(nameKey(f.link.split("/").pop()));
@@ -246,11 +265,12 @@ const L = EXPORT;
 const choose = (rows, notes) => new Promise((resolve) => {
   const modal = new Modal(app);
   let result = { mode: "cancel" };
-  modal.titleEl.setText(`${L.plural(rows.length, "tune")} with no note`);
+  modal.titleEl.setText(rows.some((r) => r.identified) ? "Tunes to name or link" : `${L.plural(rows.length, "tune")} with no note`);
   modal.modalEl.style.width = "min(720px, 94vw)";
   const body = modal.contentEl;
 
-  body.createEl("p", { text: "Tick Create note to make a tune note (change the name if you like; the section is renamed to match), or Use existing to rename the section to a note you already have. Tunes left unticked are exported without a link." })
+  body.createEl("p", { text: "Tick Create note to make a tune note (change the name if you like; the section is renamed to match), or Use existing to rename the section to a note you already have. Tunes left unticked are exported without a link."
+    + (rows.some((r) => r.identified) ? " Sections still called Tune 2 and so on are shown with the name Tune Finder gave them: left unticked, the section just takes that name; tick Leave as Tune N to keep it as it is." : "") })
     .style.cssText = "margin-top:0;color:var(--text-muted);";
 
   const bar = body.createDiv();
@@ -268,9 +288,11 @@ const choose = (rows, notes) => new Promise((resolve) => {
     refreshers.forEach((f) => f());
     const c = rows.filter((r) => r.action === "create").length;
     const e = rows.filter((r) => r.action === "existing").length;
+    const n = rows.filter((r) => r.identified && r.action === "none").length;
     const parts = [];
     if (c) parts.push(`create ${L.plural(c, "note")}`);
     if (e) parts.push(`use ${L.plural(e, "existing note")}`);
+    if (n) parts.push(`name ${L.plural(n, "tune")} without a note`);
     status.setText(parts.length ? `Will ${parts.join(" and ")}, then export.` : "Nothing to create; the export will run as before.");
     status.style.color = "var(--text-muted)";
   };
@@ -281,6 +303,10 @@ const choose = (rows, notes) => new Promise((resolve) => {
     const item = list.createDiv();
     item.style.cssText = "padding:8px 2px;border-bottom:1px solid var(--background-modifier-border);";
     const head = item.createDiv();
+    if (row.identified) {
+      const was = [...new Set(row.sections.map((s) => s.name))].join(", ");
+      head.createSpan({ text: `${was} → ` }).style.color = "var(--text-muted)";
+    }
     head.createEl("strong", { text: row.name });
     const details = [row.type, row.key].filter(Boolean).join(", ");
     if (details || row.url) {
@@ -340,7 +366,16 @@ const choose = (rows, notes) => new Promise((resolve) => {
         refresh();
       });
     }
+    let skip = null;
+    if (row.identified) {
+      skip = tick("Leave as Tune N");
+      skip.box.addEventListener("change", () => {
+        row.action = skip.box.checked ? "skip" : "none";
+        refresh();
+      });
+    }
     refreshers.push(() => {
+      if (skip) skip.box.checked = row.action === "skip";
       create.box.checked = row.action === "create";
       warn.setText(row.action === "create" && row.problem ? `That name ${row.problem}.` : "");
       if (row.newName !== row.name && !L.nameProblem(row.newName, row, rows, notes)) {
@@ -408,8 +443,10 @@ try {
     if (mode === "apply") {
       // Create note: the Trad Template's frontmatter, then type, key, session and alias.
       const renames = [];
-      const sectionsTo = (row, to) => row.sections.forEach((sec) =>
-        renames.push({ file: sec.file, start: sec.start, end: sec.end, from: row.name, to }));
+      // Each section is renamed from its own name (Tune 2 for one Tune Finder named).
+      const sectionsTo = (row, to) => row.sections.forEach((sec) => {
+        if (sec.name !== to) renames.push({ file: sec.file, start: sec.start, end: sec.end, from: sec.name, to });
+      });
       const toCreate = rows.filter((r) => r.action === "create");
       if (toCreate.length) {
         const tpl = app.vault.getAbstractFileByPath(TUNE_TEMPLATE);
@@ -418,7 +455,11 @@ try {
         if (!app.vault.getAbstractFileByPath(TUNE_FOLDER)) await app.vault.createFolder(TUNE_FOLDER);
         let made = 0;
         for (const row of toCreate) {
-          if (noteExists(row.newName, session)) { problems.push(`${row.newName} already has a note, left alone`); continue; }
+          if (noteExists(row.newName, session)) {
+            problems.push(`${row.newName} already had a note, so that one is used`);
+            sectionsTo(row, row.newName);
+            continue;
+          }
           let file;
           try {
             file = await app.vault.create(normalizePath(`${TUNE_FOLDER}/${row.newName}.md`), skeleton + SECTIONS);
@@ -435,7 +476,7 @@ try {
               if (alias) fm.aliases = [alias];
             });
           }
-          if (row.newName !== row.name) sectionsTo(row, row.newName);
+          sectionsTo(row, row.newName);
           made++;
         }
         if (made) done.push(`Created ${L.plural(made, "note")}`);
@@ -445,6 +486,8 @@ try {
       // session note and in any other note's loops block for the same audio, so the
       // player's blocks still agree.
       rows.filter((r) => r.action === "existing" && r.existing).forEach((r) => sectionsTo(r, r.existing));
+      // Tune Finder's name accepted without a note: rename only.
+      rows.filter((r) => r.identified && r.action === "none" && r.newName).forEach((r) => sectionsTo(r, r.newName));
       if (renames.length) {
         let n = 0;
         await app.vault.process(session, (t) => { const r = L.renameInLoops(t, renames); n = r.count; return r.text; });

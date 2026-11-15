@@ -253,3 +253,60 @@ test("run from a tune's own note, that tune is not offered (accents and case ign
   const fromSpideil = E.buildRows(E.parseSections(text), [], [], "Ríl an Spidéil");
   assert.deepEqual(fromSpideil.map((r) => r.name), ["The Castle", "Lucy Farr's"]);
 });
+
+const FINDER = [
+  "```loops", "file: Sessions/S/02 Set 1.m4a",
+  "0:00 - 2:19.5 | Tune 1",
+  "2:07.5 - 4:56 | Tune 2 ?",
+  "4:56 - 6:30 | Tune 3",
+  "6:30 - 8:00 | Tune 4",
+  "```",
+  "Identified tunes:",
+  "- 0:00 - 2:19.5 (Tune 1): [[Shaskeen Reel]], Reel, G ([thesession](https://thesession.org/tunes/615#setting58147))",
+  "- 2:07.5 - 4:56: Carolan's Concerto, Reel, D ([thesession](https://thesession.org/tunes/788#setting13923))",
+  "- 6:30 - 8:00 (Tune 4): Carolan's Concerto, Reel, D ([thesession](https://thesession.org/tunes/788#setting13923))",
+  "```loops", "file: Sessions/S/04 Set 2.m4a",
+  "0:00 - 1:00 | Tune 1",
+  "```",
+  "Identified tunes:",
+  "- 0:00 - 1:00 (Tune 1): [[Folders/The Kesh]], Jig, G ([thesession](https://thesession.org/tunes/55))",
+].join("\n");
+
+test("Tune N sections Tune Finder identified get a row under its name", () => {
+  const notes = [note("Shaskeen Reel"), note("The Kesh")];
+  const rows = Object.fromEntries(E.buildRows(E.parseSections(FINDER), E.parseIdentified(FINDER), notes).map((r) => [r.name, r]));
+  assert.deepEqual(Object.keys(rows), ["Shaskeen Reel", "Carolan's Concerto", "The Kesh"]); // Tune 3: not identified
+
+  const shaskeen = rows["Shaskeen Reel"];
+  assert.equal(shaskeen.identified, true);
+  assert.deepEqual([shaskeen.action, shaskeen.existing], ["existing", "Shaskeen Reel"]);
+  assert.equal(shaskeen.candidates[0].why, "Tune Finder named it");
+
+  const carolan = rows["Carolan's Concerto"];
+  assert.deepEqual([carolan.action, carolan.type, carolan.key, carolan.tuneId], ["create", "Reel", "D", "788"]);
+  assert.deepEqual(carolan.sections.map((s) => s.name), ["Tune 2", "Tune 4"]); // played twice, one row
+  assert.equal(carolan.newName, "Carolan's Concerto");
+
+  assert.deepEqual([rows["The Kesh"].action, rows["The Kesh"].existing], ["existing", "The Kesh"]); // link target
+});
+
+test("an identified Tune N is offered even when you run from that tune's note", () => {
+  const [row] = E.buildRows(E.parseSections(FINDER), E.parseIdentified(FINDER), [], "carolan's concerto")
+    .filter((r) => r.name === "Carolan's Concerto");
+  assert.deepEqual([row.action, row.existing], ["existing", "carolan's concerto"]);
+});
+
+test("named and Tune N sections of one tune stay separate rows", () => {
+  const text = FINDER.replace("4:56 - 6:30 | Tune 3", "4:56 - 6:30 | Carolan's Concerto");
+  const rows = E.buildRows(E.parseSections(text), E.parseIdentified(text), []).filter((r) => r.name === "Carolan's Concerto");
+  assert.deepEqual(rows.map((r) => r.identified), [true, false]);
+});
+
+test("renaming a Tune N section by its own name, ' ?' and all", () => {
+  const { text, count } = E.renameInLoops(FINDER, [
+    { file: "Sessions/S/02 Set 1.m4a", start: 127.5, end: 296, from: "Tune 2", to: "Carolan's Concerto" }]);
+  assert.equal(count, 1);
+  assert.match(text, /^2:07\.5 - 4:56 \| Carolan's Concerto$/m);
+  assert.match(text, /^4:56 - 6:30 \| Tune 3$/m);
+  assert.match(text, /^0:00 - 1:00 \| Tune 1$/m); // same name, other set file: untouched
+});
