@@ -15,7 +15,10 @@ repeating stretch and be at least min_tune after the previous one.
 Weak changes (strength from 0.15) are kept and marked as guesses rather
 than dropped: in real sessions most of them are real changes, often into a
 tune played loosely or only twice, and a guess is easier to delete than a
-missing boundary is to find.
+missing boundary is to find. The exception is a weak change less than
+min_tune before the end of the set: what follows is too short to be a
+tune played twice, and in practice it is the last round of the same tune
+played a little differently (a false cut seconds before the set ends).
 """
 
 from __future__ import annotations
@@ -127,6 +130,8 @@ def find_changes(chroma: np.ndarray, start: float, end: float,
         t = max(range(lo, hi), key=lambda u: _drop(rep, u, fine, fine)) if hi > lo else t
         if t < edge or t >= n - edge:
             continue
+        if strength < CONFIDENT and t > n - gap:
+            continue  # too little left after a weak change for a whole tune
         if all(abs(t - u) >= gap for u, _ in picked):
             picked.append((t, strength))
     picked.sort()
