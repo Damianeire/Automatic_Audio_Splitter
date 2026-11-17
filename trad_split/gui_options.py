@@ -219,6 +219,53 @@ def update_config(text: str, opts: dict) -> str:
     return "\n".join(lines) + "\n"
 
 
+FOLDERS = [("output", "Put session folders in"), ("vault", "Obsidian vault")]
+
+
+def _jsonable(value):
+    return str(value) if isinstance(value, Path) else value
+
+
+def options_schema(opts: dict, config: Path = cli.CONFIG_PATH) -> dict:
+    """What the Obsidian plugin's settings tab shows: every saved option, its
+    label, range and help, and its current value (built-in defaults with the
+    config file on top)."""
+    return {
+        "config": str(config),
+        "bools": [{"key": k, "label": label, "tip": TIPS.get(k, ""), "per_run": k in PER_RUN}
+                  for k, label in BOOLS],
+        "numbers": [{"key": k, "label": label, "min": lo, "max": hi, "step": step, "decimals": dec}
+                    for k, label, lo, hi, step, dec in NUMBERS],
+        "folders": [{"key": k, "label": label} for k, label in FOLDERS],
+        "choices": {"tune_format": TUNE_FORMATS},
+        "values": {k: _jsonable(opts.get(k)) for k in SAVED + sorted(PER_RUN)},
+    }
+
+
+def apply_values(opts: dict, values: dict) -> dict:
+    """opts with the saved options in values (as JSON from the plugin) put on top.
+    Unknown keys are refused rather than silently dropped."""
+    unknown = set(values) - set(SAVED)
+    if unknown:
+        raise ValueError(f"not options that can be saved: {', '.join(sorted(unknown))}")
+    new = dict(opts)
+    numbers = {k for k, *_ in NUMBERS}
+    for key, value in values.items():
+        if key in ("output", "vault"):
+            new[key] = Path(value).expanduser() if value else None
+        elif key in numbers:
+            new[key] = float(value)
+        elif key == "tune_format":
+            if value not in TUNE_FORMATS:
+                raise ValueError(f"tune_format must be one of {', '.join(TUNE_FORMATS)}")
+            new[key] = value
+        else:
+            if not isinstance(value, bool):
+                raise ValueError(f"{key} must be true or false")
+            new[key] = value
+    return new
+
+
 def save_config(path: Path, opts: dict) -> None:
     """Save the options into the config file. Raises ValueError, leaving the file
     as it was, if the result would not be valid TOML."""
