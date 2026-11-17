@@ -1,19 +1,24 @@
-// Tests for the pure logic at the top of the Export tunes template.
+// Tests for Export tunes' pure logic, in the Obsidian plugin
+// (obsidian-plugin/src/export-logic.js). The Templater template keeps its own
+// copy until it is retired; a test below checks the two are the same.
 // Run with: node --test tests/  (tests/test_export_template.py runs it under pytest)
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
+import { EXPORT } from "../obsidian-plugin/src/export-logic.js";
 
 const TEMPLATE = fileURLToPath(new URL("../trad_split/obsidian/Export tunes.md", import.meta.url));
+const MODULE = fileURLToPath(new URL("../obsidian-plugin/src/export-logic.js", import.meta.url));
 const source = readFileSync(TEMPLATE, "utf8");
 
-export function loadLogic(text = source) {
-  const start = text.indexOf("const EXPORT = ");
-  const end = text.indexOf("// ===================== end pure logic");
-  return new Function(`${text.slice(start, end)}\nreturn EXPORT;`)();
-}
-const E = loadLogic();
+const E = EXPORT;
+
+test("the template's copy of the logic is the plugin's, word for word", () => {
+  const tpl = source.slice(source.indexOf("const EXPORT = "), source.indexOf("// ===================== end pure logic"));
+  const mod = readFileSync(MODULE, "utf8");
+  assert.equal(mod.slice(mod.indexOf("export const EXPORT = ") + "export ".length), tpl);
+});
 
 test("the whole template parses as JavaScript", () => {
   const body = source.slice(source.indexOf("<%*") + 3, source.lastIndexOf("-%>"));
