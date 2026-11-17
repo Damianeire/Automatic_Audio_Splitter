@@ -1,6 +1,7 @@
 <%*
 // Cut each named tune in this session note's loops blocks into its own file
-// ("yyyymmdd Tune Name.mp3") and link it from the tune's own note.
+// ("yyyymmdd Tune Name.mp3") and link it from the tune's own note. Then name
+// each set file after its tunes ("yyyymmdd Set 1 - Silver Spear, Kesh.m4a").
 // Named tunes with no note of their own are listed first in a window: tick
 // "Create note" to make a tune note for them, or "Use existing note" to rename
 // the section to a note that is already there, so the export links it.
@@ -246,10 +247,121 @@ const EXPORT = (() => {
     return m ? m[0].replace(/\r?\n?$/, "\n") : null;
   }
 
+  // ---- Naming set files after their tunes ----
+  // Set files trad-split writes: "02 Set 1", "05 Set 3 - Silver Spear" (a Reaper
+  // region name), or one already renamed here, "20251122 Set 1 - Kesh, Castle".
+  // Any other audio file (a tune note's own recording) is never renamed.
+  const SET_FILE = /^(?:(\d{8})|\d{2,3}) (Set \d+)(?: - .*)?$/;
+  // Obsidian refuses these in file names, and # ^ [ ] break links.
+  const NOT_IN_FILE_NAMES = /[\\/:*?"<>|#^[\]]/g;
+  const MAX_SET_NAME = 80;
+
+  function setFileParts(stem) {
+    const m = SET_FILE.exec(String(stem).normalize("NFC"));
+    return m ? { date: m[1] || "", set: m[2] } : null;
+  }
+
+  // yyyymmdd from a note's frontmatter `date:`, as the export reads it.
+  function noteDate(text) {
+    const fm = /^---\r?\n([\s\S]*?)\r?\n---/.exec(text);
+    const d = fm && /^date:\s*['"]?(\d{4})-(\d{2})-(\d{2})/m.exec(fm[1]);
+    return d ? d[1] + d[2] + d[3] : "";
+  }
+
+  // "The Silver Spear ?" -> "Silver Spear"; "Tune 2" -> "Unnamed".
+  function shortTune(name) {
+    const n = cleanName(name);
+    if (isPlaceholder(n)) return "Unnamed";
+    return n.replace(/^the\s+/i, "").replace(NOT_IN_FILE_NAMES, "").replace(/\s+/g, " ").trim() || "Unnamed";
+  }
+
+  // "20251122 Set 1 - Silver Spear, Kesh, Lucy Farr's". When that is over max
+  // characters, the last tunes become a count: "... Nightcap +2". At least one
+  // tune is always kept. null when no tune in the set is named yet.
+  function setFileName(date, set, names, max = MAX_SET_NAME) {
+    const tunes = names.map(shortTune);
+    if (!tunes.some((t) => t !== "Unnamed")) return null;
+    const head = `${date} ${set} - `;
+    for (let k = tunes.length; k >= 1; k--) {
+      const name = head + tunes.slice(0, k).join(", ") + (k < tunes.length ? ` +${tunes.length - k}` : "");
+      if (name.length <= max || k === 1) return name;
+    }
+  }
+
+  // The set files a note's loops blocks point at, and the name each should have.
+  // resolve(fileValue) -> { path, folder, stem, ext } or null (file not found).
+  // Returns [{ from, to }] vault paths, only for files whose name changes.
+  function planSetRenames(text, resolve) {
+    const byPath = new Map();
+    for (const sec of parseSections(text)) {
+      const f = resolve(sec.file);
+      if (!f) continue;
+      if (!byPath.has(f.path)) byPath.set(f.path, { f, secs: [] });
+      const entry = byPath.get(f.path);
+      // The same file in two blocks: keep the first block's sections.
+      if (!entry.secs.some((s) => Math.abs(s.start - sec.start) <= 0.25)) entry.secs.push(sec);
+    }
+    const date = noteDate(text);
+    const out = [];
+    for (const { f, secs } of byPath.values()) {
+      const parts = setFileParts(f.stem);
+      if (!parts) continue;
+      const day = date || parts.date || (/^(\d{8})\b/.exec(f.folder.split("/").pop() || "") || [])[1] || "";
+      if (!day) continue;
+      secs.sort((a, b) => a.start - b.start);
+      const name = setFileName(day, parts.set, secs.map((s) => s.name));
+      if (!name) continue;
+      const to = (f.folder ? f.folder + "/" : "") + name + (f.ext ? "." + f.ext : "");
+      if (nameKey(to) !== nameKey(f.path)) out.push({ from: f.path, to });
+    }
+    return out;
+  }
+
+  // Every file a note refers to: loops `file:` lines and [[links]], as written.
+  const WIKILINK = /(!?)\[\[([^\]|#\n]+?)(\\?)((?:[|#][^\]\n]*)?)\]\]/g;
+  const unwrap = (v) => String(v).trim().replace(/^\[\[|\]\]$/g, "").split("|")[0].trim();
+  function linkValues(text) {
+    const values = new Set();
+    for (const m of text.matchAll(BLOCK)) {
+      for (const line of m[1].split("\n")) {
+        if (line.trim().toLowerCase().startsWith("file:")) values.add(unwrap(line.split(":").slice(1).join(":")));
+      }
+    }
+    for (const m of text.matchAll(WIKILINK)) values.add(m[2].trim());
+    return [...values];
+  }
+
+  // Point links and loops `file:` lines at renamed files. pointsAt(value) gives
+  // the vault path a value referred to before the renames; moves maps those
+  // paths to new ones. Links keep their alias, heading and "!"; table links keep
+  // their "\|". Returns { text, count }.
+  function retargetLinks(text, pointsAt, moves) {
+    let count = 0;
+    const target = (value) => {
+      const from = pointsAt(unwrap(value));
+      return from && moves.has(from) ? moves.get(from) : null;
+    };
+    let out = text.replace(BLOCK, (block) => block.split("\n").map((line) => {
+      if (!line.trim().toLowerCase().startsWith("file:")) return line;
+      const to = target(line.split(":").slice(1).join(":"));
+      if (!to) return line;
+      count++;
+      return line.slice(0, line.toLowerCase().indexOf("file:")) + "file: " + to;
+    }).join("\n"));
+    out = out.replace(WIKILINK, (all, bang, value, bs, rest) => {
+      const to = target(value);
+      if (!to) return all;
+      count++;
+      return `${bang}[[${to}${bs}${rest}]]`;
+    });
+    return { text: out, count };
+  }
+
   const plural = (n, word) => `${n} ${word}${n === 1 ? "" : "s"}`;
 
   return { parseTime, cleanName, isPlaceholder, nameKey, parseSections, parseListLine, parseIdentified,
-    findIdentified, looseKey, looseMatch, fileNameProblem, tuneIdOf, nameProblem, buildRows, aliasFor, renameInLoops, frontmatterOf, plural };
+    findIdentified, looseKey, looseMatch, fileNameProblem, tuneIdOf, nameProblem, buildRows, aliasFor, renameInLoops, frontmatterOf,
+    setFileParts, noteDate, shortTune, setFileName, planSetRenames, unwrap, linkValues, retargetLinks, plural };
 })();
 // ===================== end pure logic =====================
 
@@ -416,6 +528,48 @@ const choose = (rows, notes) => new Promise((resolve) => {
   modal.open();
 });
 
+// Rename the set files this note's loops blocks play to "20251122 Set 1 - Silver
+// Spear, Kesh", then point every link and loops `file:` line in the vault that
+// referred to them at the new name. Obsidian does not count `file:` lines as
+// links, so this does both itself instead of relying on its own link updating.
+const linkDest = (value, from) => app.metadataCache.getFirstLinkpathDest(L.unwrap(value), from);
+async function renameSetFiles(session) {
+  const text = await app.vault.read(session);
+  const plan = L.planSetRenames(text, (value) => {
+    const f = linkDest(value, session.path);
+    return f && { path: f.path, folder: f.parent && f.parent.path !== "/" ? f.parent.path : "", stem: f.basename, ext: f.extension };
+  });
+  const renamed = [];
+  const problems = [];
+  for (const { from, to } of plan) {
+    const file = app.vault.getAbstractFileByPath(from);
+    if (!file) continue;
+    const newName = to.split("/").pop();
+    if (app.vault.getAbstractFileByPath(to)) { problems.push(`${newName} already exists, so ${file.name} kept its name`); continue; }
+    // Which notes point at this file, and with what text, worked out before it moves.
+    const oldName = L.nameKey(file.name);
+    const notes = [];
+    for (const f of app.vault.getMarkdownFiles()) {
+      const t = await app.vault.cachedRead(f);
+      if (!L.nameKey(t).includes(oldName)) continue;
+      const values = new Set(L.linkValues(t).filter((v) => linkDest(v, f.path)?.path === from));
+      if (values.size) notes.push({ f, values });
+    }
+    try {
+      await app.vault.rename(file, to);
+    } catch (e) {
+      problems.push(`could not rename ${file.name}: ${e.message}`);
+      continue;
+    }
+    const moves = new Map([[from, to]]);
+    for (const { f, values } of notes) {
+      await app.vault.process(f, (t) => L.retargetLinks(t, (v) => (values.has(v) ? from : null), moves).text);
+    }
+    renamed.push(newName);
+  }
+  return { renamed, problems };
+}
+
 // Is there now a note with this name anywhere in the vault (other than the session)?
 const noteExists = (name, session) => app.vault.getMarkdownFiles()
   .some((f) => f.path !== session.path && L.nameKey(f.basename) === L.nameKey(name));
@@ -506,6 +660,9 @@ try {
   }
 
   const out = (await tp.user.export_tunes({ note: tp.file.path() })).trim() || "Export finished";
+  const sets = await renameSetFiles(session);
+  if (sets.renamed.length) done.push(`renamed ${L.plural(sets.renamed.length, "set file")}`);
+  problems.push(...sets.problems);
   const head = [...done, ...problems].join("; ");
   new Notice(head ? `${head[0].toUpperCase()}${head.slice(1)}.\n${out}` : out, 15000);
 } catch (e) {
