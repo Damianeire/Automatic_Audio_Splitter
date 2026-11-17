@@ -50,6 +50,20 @@ def test_weak_change_is_kept_as_a_guess():
     assert fewer == []
 
 
+def test_weak_change_near_the_end_is_dropped():
+    # The same faint change as above, but the set ends 40 s after it: too
+    # short for a tune played twice, so it is the end of the first tune.
+    first = tune(62, seed=1)
+    second = (0.4 * tune(62, seed=2) + 0.6 * tune(62, seed=1))[:40 * SR]
+    audio = set_of(first, second)
+    f = tunes.features(audio)
+    found, _ = tunes.find_changes(f["chroma"], 0, len(audio) / SR)
+    assert found == []
+    # A shorter shortest-tune setting lets it through again.
+    kept, _ = tunes.find_changes(f["chroma"], 0, len(audio) / SR, tunes.TuneParams(min_tune=30))
+    assert len(kept) == 1 and not kept[0].confident
+
+
 def test_short_set_is_one_tune():
     chroma = np.random.default_rng(0).random((12, 100))
     assert tunes.find_changes(chroma, 0, 50)[0] == []
