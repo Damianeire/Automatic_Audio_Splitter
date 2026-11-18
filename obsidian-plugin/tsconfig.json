@@ -1,0 +1,20 @@
+{
+	"compilerOptions": {
+		"baseUrl": ".",
+		"module": "ESNext",
+		"target": "ES2020",
+		"allowJs": true,
+		"noImplicitAny": true,
+		"moduleResolution": "bundler",
+		"allowImportingTsExtensions": true,
+		"noEmit": true,
+		"importHelpers": true,
+		"isolatedModules": true,
+		"strictNullChecks": true,
+		"skipLibCheck": true,
+		"types": ["node"],
+		"lib": ["DOM", "DOM.Iterable", "ES2020"]
+	},
+	"include": ["src/**/*.ts", "src/**/*.js", "tests/**/*.ts"],
+	"exclude": ["node_modules"]
+}

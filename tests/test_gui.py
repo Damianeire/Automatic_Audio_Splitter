@@ -3,7 +3,7 @@ from pathlib import Path
 
 import pytest
 
-from trad_split import cli
+from trad_split import cli, gui_options
 from trad_split.gui_options import (
     NOTE, REAPER, MEMO, ProgressLog, build_argv, initial_options, kind, session_dirs, update_config,
     where_hint,
@@ -181,3 +181,44 @@ def test_window_builds(tmp_path, opts, monkeypatch):
     assert win.current_options()["output"] is None and win.output_edit.text()
     win.close()
     app.processEvents()
+
+
+def test_show_options_lists_every_saved_option_with_its_value(tmp_path, capsys):
+    import json
+
+    config = tmp_path / "config.toml"
+    config.write_text('min_tune = 75.0\nvault = "~/Vault"\n', encoding="utf-8")
+    assert cli.main(["--show-options", "--config", str(config)]) == 0
+    schema = json.loads(capsys.readouterr().out)
+    assert schema["config"] == str(config)
+    keys = {o["key"] for group in ("bools", "numbers", "folders") for o in schema[group]}
+    assert set(gui_options.SAVED) <= keys | {"tune_format"}
+    assert schema["values"]["min_tune"] == 75.0
+    assert schema["values"]["vault"] == str(Path("~/Vault").expanduser())
+    assert schema["values"]["output"] is None
+    assert {o["key"]: o["per_run"] for o in schema["bools"]}["force"] is True
+
+
+def test_save_options_writes_the_config_and_keeps_comments(tmp_path, capsys):
+    import json
+
+    config = tmp_path / "config.toml"
+    config.write_text("# mine\nmin_tune = 75.0\n", encoding="utf-8")
+    values = {"min_tune": 90, "joined": True, "output": "", "vault": "~/Vault", "tune_format": "m4a"}
+    assert cli.main(["--save-options", json.dumps(values), "--config", str(config)]) == 0
+    text = config.read_text(encoding="utf-8")
+    assert text.startswith("# mine\nmin_tune = 90.0\n")
+    saved = tomllib.loads(text)
+    assert saved["joined"] is True and saved["tune_format"] == "m4a" and saved["vault"] == "~/Vault"
+    assert "output" not in saved
+    assert json.loads(capsys.readouterr().out)["values"]["min_tune"] == 90.0
+
+
+@pytest.mark.parametrize("values", ['{"force": true}', '{"min_tune": "x"}', '{"tune_format": "wav"}',
+                                    '{"joined": "yes"}', '[1]', 'not json'])
+def test_save_options_refuses_bad_values_and_leaves_the_file(tmp_path, values):
+    config = tmp_path / "config.toml"
+    config.write_text("min_tune = 75.0\n", encoding="utf-8")
+    with pytest.raises(SystemExit, match="options not saved"):
+        cli.main(["--save-options", values, "--config", str(config)])
+    assert config.read_text(encoding="utf-8") == "min_tune = 75.0\n"

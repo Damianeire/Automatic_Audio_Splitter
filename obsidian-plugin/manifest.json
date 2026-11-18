@@ -1,0 +1,9 @@
+{
+	"id": "trad-split",
+	"name": "trad-split",
+	"version": "0.1.0",
+	"minAppVersion": "1.4.0",
+	"description": "Split session recordings into sets and tunes, add tune loops, and export named tunes, by running trad-split on this Mac.",
+	"author": "Damian Evans",
+	"isDesktopOnly": true
+}

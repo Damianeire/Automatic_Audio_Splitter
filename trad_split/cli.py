@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import argparse
+import json
 import re
 import shutil
 import sys
@@ -122,6 +123,11 @@ def build_parser() -> argparse.ArgumentParser:
                      help="higher marks more changes, lower fewer (default 1.0)")
     tun.add_argument("--tune-tail", type=float,
                      help="seconds each tune's loop and export run past the change (default 2)")
+    plug = p.add_argument_group("for the Obsidian plugin")
+    plug.add_argument("--show-options", action="store_true",
+                      help="print the saved options, with labels and current values, as JSON")
+    plug.add_argument("--save-options", metavar="JSON",
+                      help="save options given as a JSON object into the config file")
     det.add_argument("--device", help="torch device: auto, cpu, mps, cuda")
     det.add_argument("--model", type=Path, help="path to Cnn14_DecisionLevelMax checkpoint")
     return p
@@ -351,6 +357,21 @@ def main(argv: list[str] | None = None) -> int:
     args = build_parser().parse_args(argv)
     opts = resolve_options(args)
     try:
+        if args.show_options or args.save_options is not None:
+            from . import gui_options
+
+            if args.save_options is not None:
+                try:
+                    values = json.loads(args.save_options)
+                    if not isinstance(values, dict):
+                        raise ValueError("expected a JSON object")
+                    opts = gui_options.apply_values(opts, values)
+                    gui_options.save_config(args.config, opts)
+                except ValueError as e:
+                    raise SystemExit(f"error: options not saved: {e}")
+            print(json.dumps(gui_options.options_schema(opts, args.config), indent=2))
+            return 0
+
         if args.setup_obsidian:
             from .obsidian_setup import SetupError, setup
 
